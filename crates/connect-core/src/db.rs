@@ -101,6 +101,10 @@ impl Database {
                 cloudflared_path TEXT NOT NULL DEFAULT '',
                 tunnel_token TEXT NOT NULL DEFAULT '',
                 hostname TEXT NOT NULL DEFAULT '',
+                account_id TEXT NOT NULL DEFAULT '',
+                project_name TEXT NOT NULL DEFAULT '',
+                api_token TEXT NOT NULL DEFAULT '',
+                branch TEXT NOT NULL DEFAULT 'main',
                 is_default INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             );
@@ -112,6 +116,10 @@ impl Database {
         let _ = conn.execute("ALTER TABLE publish_targets ADD COLUMN cloudflared_path TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE publish_targets ADD COLUMN tunnel_token TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE publish_targets ADD COLUMN hostname TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE publish_targets ADD COLUMN account_id TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE publish_targets ADD COLUMN project_name TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE publish_targets ADD COLUMN api_token TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE publish_targets ADD COLUMN branch TEXT NOT NULL DEFAULT 'main'", []);
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -580,7 +588,7 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT id, name, kind, endpoint, region, bucket, access_key, secret_key,
                     prefix, public_base_url, cloudflared_path, tunnel_token, hostname,
-                    is_default, created_at
+                    account_id, project_name, api_token, branch, is_default, created_at
              FROM publish_targets ORDER BY id DESC",
         )?;
         let rows = stmt
@@ -599,8 +607,12 @@ impl Database {
                     cloudflared_path: row.get(10)?,
                     tunnel_token: row.get(11)?,
                     hostname: row.get(12)?,
-                    is_default: row.get::<_, i64>(13)? != 0,
-                    created_at: row.get(14)?,
+                    account_id: row.get(13)?,
+                    project_name: row.get(14)?,
+                    api_token: row.get(15)?,
+                    branch: row.get(16)?,
+                    is_default: row.get::<_, i64>(17)? != 0,
+                    created_at: row.get(18)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -615,8 +627,9 @@ impl Database {
         conn.execute(
             "INSERT INTO publish_targets
              (name, kind, endpoint, region, bucket, access_key, secret_key, prefix,
-              public_base_url, cloudflared_path, tunnel_token, hostname, is_default, created_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+              public_base_url, cloudflared_path, tunnel_token, hostname, account_id,
+              project_name, api_token, branch, is_default, created_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
             params![
                 input.name,
                 input.kind,
@@ -630,6 +643,10 @@ impl Database {
                 input.cloudflared_path,
                 input.tunnel_token,
                 input.hostname,
+                input.account_id,
+                input.project_name,
+                input.api_token,
+                input.branch,
                 if input.is_default { 1 } else { 0 },
                 Utc::now().to_rfc3339()
             ],

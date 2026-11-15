@@ -136,6 +136,10 @@ export type PublishTarget = {
   cloudflared_path: string;
   tunnel_token: string;
   hostname: string;
+  account_id: string;
+  project_name: string;
+  api_token: string;
+  branch: string;
   is_default: boolean;
   created_at: string;
 };

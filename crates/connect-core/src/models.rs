@@ -122,6 +122,14 @@ pub struct PublishTarget {
     pub tunnel_token: String,
     #[serde(default)]
     pub hostname: String,
+    #[serde(default)]
+    pub account_id: String,
+    #[serde(default)]
+    pub project_name: String,
+    #[serde(default)]
+    pub api_token: String,
+    #[serde(default)]
+    pub branch: String,
     pub is_default: bool,
     pub created_at: String,
 }
@@ -143,6 +151,14 @@ pub struct PublishTargetInput {
     pub tunnel_token: String,
     #[serde(default)]
     pub hostname: String,
+    #[serde(default)]
+    pub account_id: String,
+    #[serde(default)]
+    pub project_name: String,
+    #[serde(default)]
+    pub api_token: String,
+    #[serde(default)]
+    pub branch: String,
     #[serde(default)]
     pub is_default: bool,
 }

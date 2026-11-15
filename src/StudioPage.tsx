@@ -669,14 +669,24 @@ function TargetDialog(props: {
     cloudflared_path: "",
     tunnel_token: "",
     hostname: "",
+    account_id: "",
+    project_name: "",
+    api_token: "",
+    branch: "main",
     is_default: true,
   });
 
   const isS3 = form.kind === "s3" || form.kind === "r2";
+  const isPages = form.kind === "cloudflare_pages";
+  const isTunnel = form.kind === "lan_tunnel" || form.kind === "cloudflare_tunnel";
 
   const save = async () => {
     if (isS3 && !form.bucket.trim()) {
       props.onError("请填写 bucket");
+      return;
+    }
+    if (isPages && (!form.account_id.trim() || !form.project_name.trim() || !form.api_token.trim())) {
+      props.onError("请填写 Account ID、Project Name 和 API Token");
       return;
     }
     if (form.kind === "cloudflare_tunnel" && (!form.tunnel_token.trim() || !form.hostname.trim())) {
@@ -705,6 +715,7 @@ function TargetDialog(props: {
             <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
               <option value="s3">S3 / MinIO</option>
               <option value="r2">Cloudflare R2</option>
+              <option value="cloudflare_pages">Cloudflare Pages</option>
               <option value="lan_tunnel">局域网穿透（Quick Tunnel）</option>
               <option value="cloudflare_tunnel">Cloudflare Tunnel</option>
             </select>
@@ -765,7 +776,57 @@ function TargetDialog(props: {
           </>
         )}
 
-        {!isS3 && (
+        {isPages && (
+          <>
+            <div className="grid two" style={{ gridTemplateColumns: "1fr 1fr" }}>
+              <div className="field">
+                <label>Account ID</label>
+                <input
+                  value={form.account_id}
+                  onChange={(e) => setForm({ ...form, account_id: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Project Name</label>
+                <input
+                  value={form.project_name}
+                  onChange={(e) => setForm({ ...form, project_name: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="field">
+              <label>Cloudflare API Token（Pages: Edit）</label>
+              <input
+                type="password"
+                value={form.api_token}
+                onChange={(e) => setForm({ ...form, api_token: e.target.value })}
+              />
+            </div>
+            <div className="grid two" style={{ gridTemplateColumns: "1fr 1fr" }}>
+              <div className="field">
+                <label>分支</label>
+                <input value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} />
+              </div>
+              <div className="field">
+                <label>路径前缀</label>
+                <input value={form.prefix} onChange={(e) => setForm({ ...form, prefix: e.target.value })} />
+              </div>
+            </div>
+            <div className="field">
+              <label>自定义域名（可选）</label>
+              <input
+                value={form.public_base_url}
+                placeholder="https://anniversary.example.com"
+                onChange={(e) => setForm({ ...form, public_base_url: e.target.value })}
+              />
+            </div>
+            <div className="tip">
+              使用 Direct Upload：BLAKE3 哈希、资源去重、创建 deployment；不需要安装 wrangler。
+            </div>
+          </>
+        )}
+
+        {isTunnel && (
           <>
             <div className="field">
               <label>cloudflared 路径（可选，默认 PATH）</label>

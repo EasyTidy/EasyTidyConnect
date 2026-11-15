@@ -114,6 +114,13 @@ async fn s3_publish_uploads_html_and_photos_with_sigv4() {
         secret_key: "SK".to_string(),
         prefix: "anniversary".to_string(),
         public_base_url: String::new(),
+        cloudflared_path: String::new(),
+        tunnel_token: String::new(),
+        hostname: String::new(),
+        account_id: String::new(),
+        project_name: String::new(),
+        api_token: String::new(),
+        branch: String::new(),
         is_default: true,
         created_at: String::new(),
     };

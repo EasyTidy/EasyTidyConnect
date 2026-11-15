@@ -4,6 +4,7 @@ pub mod bridge;
 pub mod db;
 pub mod models;
 pub mod publish;
+pub mod pages;
 pub mod server;
 pub mod tunnel;
 

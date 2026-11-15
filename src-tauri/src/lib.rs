@@ -514,6 +514,10 @@ async fn test_publish_target(state: State<'_, AppState>, id: i64) -> Result<(), 
             .await
             .map(|_| ())
             .map_err(|err| err.to_string())
+    } else if target.kind == "cloudflare_pages" {
+        connect_core::pages::test_target(&target)
+            .await
+            .map_err(|err| err.to_string())
     } else {
         connect_core::publish::test_target(&target)
             .await
@@ -559,6 +563,15 @@ async fn publish_project(
         .join(project.id.to_string())
         .join("photos");
     let html = connect_core::anniversary::render_project(&project, "photos/");
+
+    if target.kind == "cloudflare_pages" {
+        let result = connect_core::pages::publish_project(&target, &project, &html, &photos_dir)
+            .await
+            .map_err(|err| err.to_string())?;
+        let _ = db.add_project_version(project.id, &result.url);
+        return Ok(result);
+    }
+
     let result = connect_core::publish::publish_project(&target, &project, &html, &photos_dir)
         .await
         .map_err(|err| err.to_string())?;

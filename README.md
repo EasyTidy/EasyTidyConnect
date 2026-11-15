@@ -77,6 +77,7 @@ src/                   # React UI
   - 项目编辑、5 套模板、照片、本地预览；
   - AI 文案（OpenAI 兼容 / Anthropic / Gemini）；
   - S3 / MinIO / Cloudflare R2 发布；
+  - Cloudflare Pages Direct Upload；
   - 局域网穿透（Cloudflare Quick Tunnel）与 Cloudflare Tunnel 发布；
 - 系统托盘：关闭窗口隐藏到托盘，服务继续；
 - 单实例：重复启动只唤醒已有窗口；
@@ -84,7 +85,7 @@ src/                   # React UI
 
 ## 尚未实现
 
-- Cloudflare Pages Direct Upload；
+- Cloudflare Pages 真实账号 E2E（当前 mock 测试）；
 - Cloudflare Named Tunnel 的 ingress 需用户在 Cloudflare 配置；
 - AI 集成模式复用 EasyTidy provider/key；
 - AI/发布凭证的系统密钥库加密（当前 SQLite 明文）；

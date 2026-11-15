@@ -405,6 +405,20 @@ async fn execute_action(
                 .join(project.id.to_string())
                 .join("photos");
             let html = render_project(&project, "photos/");
+
+            if target.kind == "cloudflare_pages" {
+                let result =
+                    crate::pages::publish_project(&target, &project, &html, &photos_dir)
+                        .await
+                        .map_err(|err| {
+                            (StatusCode::BAD_GATEWAY, format!("Pages 发布失败：{err}"))
+                        })?;
+                return Ok(ActionOutcome::message(
+                    StatusCode::OK,
+                    format!("已发布：{}", result.url),
+                ));
+            }
+
             let result = publish_project(&target, &project, &html, &photos_dir)
                 .await
                 .map_err(|err| (StatusCode::BAD_GATEWAY, format!("发布失败：{err}")))?;
