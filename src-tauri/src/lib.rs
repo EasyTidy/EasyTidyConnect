@@ -5,7 +5,11 @@ use std::sync::Arc;
 use connect_core::db::Database;
 use connect_core::models::{RunView, Settings, TagPayload, TriggerView};
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager, State, WindowEvent};
+use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_autostart::ManagerExt;
 
 struct AppState {
     db: Arc<Database>,
@@ -110,15 +114,48 @@ fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
 }
 
 #[tauri::command]
-fn save_settings(state: State<'_, AppState>, settings: Settings) -> Result<(), String> {
+fn save_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: Settings,
+) -> Result<(), String> {
     state
         .db
         .save_settings(&settings)
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+
+    let autolaunch = app.autolaunch();
+    let result = if settings.auto_start {
+        autolaunch.enable()
+    } else {
+        autolaunch.disable()
+    };
+    result.map_err(|err| err.to_string())
+}
+
+fn show_main(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
 }
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main(app);
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .setup(|app| {
             let app_dir: PathBuf = app
                 .path()
@@ -129,6 +166,21 @@ pub fn run() {
             let db = Arc::new(Database::open(&db_path)?);
             let settings = db.get_settings()?;
             let port = settings.port;
+
+            // 同步数据库里的开机启动设置与系统实际状态。
+            let autolaunch = app.autolaunch();
+            let actual_auto_start = autolaunch.is_enabled().unwrap_or(false);
+            if settings.auto_start != actual_auto_start {
+                let result = if settings.auto_start {
+                    autolaunch.enable()
+                } else {
+                    autolaunch.disable()
+                };
+                if let Err(err) = result {
+                    tracing::warn!("sync autostart failed: {err}");
+                }
+            }
+
             let server_ok = Arc::new(AtomicBool::new(true));
             let server_ok_task = server_ok.clone();
             let db_task = db.clone();
@@ -145,6 +197,35 @@ pub fn run() {
                 port,
                 server_ok,
             });
+
+            let show_item = MenuItem::with_id(app, "show", "打开 EasyTidy Connect", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            let tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().cloned().expect("window icon"))
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => show_main(app),
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::DoubleClick { .. } = event {
+                        show_main(tray.app_handle());
+                    }
+                })
+                .build(app)?;
+
+            app.manage(tray);
+
+            if std::env::args().any(|arg| arg == "--minimized") {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

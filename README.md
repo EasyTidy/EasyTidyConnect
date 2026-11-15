@@ -2,8 +2,8 @@
 
 独立、跨平台的 NFC 局域网触发器。碰一下 NTAG216，就能触发一个本地动作。
 
-> 当前是实现起点（M0）。已完成触发器、NFC 写入数据、局域网触发、运行历史；
-> AI、纪念日发布、EasyTidy 桥接、托盘/开机启动在后续迭代加入。
+> 当前是 M1：触发器、NFC 写入数据、局域网触发、运行历史、系统托盘、单实例、开机启动。
+> AI、纪念日发布、EasyTidy 桥接、安装/更新在后续迭代加入。
 
 ## 技术栈
 
@@ -38,7 +38,7 @@ cargo check -p easytidy-connect
 npm run tauri build
 ```
 
-产物在 `src-tauri/target/release/bundle/`。Windows 生成 NSIS/MSI；macOS/Linux 需在对应平台构建。
+产物在 `target/release/bundle/`。Windows 生成 NSIS/MSI；macOS/Linux 需在对应平台构建。
 
 ## 目录
 
@@ -57,16 +57,20 @@ src/                   # React UI
 - 写入辅助页：手机浏览器复制 URI，供 NFC Tools 写入；
 - 局域网结果页 `/t/{publicId}?k={token}`；
 - 运行历史、成功/失败状态；
-- 标记“已写入”，首次成功触发后自动标记“已验证”。
+- 标记“已写入”，首次成功触发后自动标记“已验证”；
+- 系统托盘：关闭窗口隐藏到托盘，服务继续；
+- 单实例：重复启动只唤醒已有窗口；
+- 开机启动：设置页开关会写入/移除系统自启项。
 
 ## 尚未实现
 
 - EasyTidy 本地桥接与真实任务/工作流触发；
-- 托盘、开机启动、三种启动模式；
+- 跟随 EasyTidy / 独立 / 仅手动三种集成启动模式；
 - AI provider 与纪念日模板/发布；
 - S3 / Cloudflare 发布；
 - 桌面 NFC 读卡器；
-- 密钥库（当前 token 明文存在本地 SQLite，后续迁移到系统密钥库）。
+- 密钥库（当前 token 明文存在本地 SQLite，后续迁移到系统密钥库）；
+- 自动更新、代码签名。
 
 ## 触发流程
 
