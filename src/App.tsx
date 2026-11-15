@@ -617,14 +617,17 @@ function SettingsPage(props: {
 }) {
   const [draft, setDraft] = useState<Settings>(props.settings);
   const [mode, setMode] = useState<"follow" | "independent" | "manual">(
-    props.settings.integration_mode ?? "manual",
+    props.settings.integration_mode ?? (props.settings.auto_start ? "independent" : "manual"),
   );
   const [bridgeTest, setBridgeTest] = useState<string>("");
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     setDraft(props.settings);
-    setMode(props.settings.integration_mode ?? "manual");
+    setMode(
+      props.settings.integration_mode ??
+        (props.settings.auto_start ? "independent" : "manual"),
+    );
   }, [props.settings]);
 
   const hasBridge = Boolean(draft.bridge_url.trim() && draft.bridge_token.trim());
