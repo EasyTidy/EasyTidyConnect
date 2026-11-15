@@ -1,0 +1,12 @@
+[package]
+name = "connectd"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+connect-core = { path = "../connect-core" }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow = "1"
+dirs = "6"
