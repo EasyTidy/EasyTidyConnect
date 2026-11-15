@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{title}}</title>
+<style>
+:root{--accent:{{theme}}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 30%,#1d2a4a 0%,#0b1020 55%,#060912 100%);color:#e9eefc;font-family:"PingFang SC","Microsoft YaHei",sans-serif;padding:56px 18px}
+.stars{max-width:760px;margin:0 auto;text-align:center}
+.date{color:var(--accent);font-size:12px;letter-spacing:.25em}
+h1{font-size:clamp(30px,6vw,52px);margin:16px 0 8px;font-weight:300;letter-spacing:.06em}
+.to{color:#9fb0d8;font-size:14px;margin-bottom:30px}
+.text{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:30px;backdrop-filter:blur(8px)}
+p{line-height:2;font-size:15px;color:#d7e0f5;margin:0 0 14px}
+.photos{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:24px 0}
+.photos img{width:100%;height:210px;object-fit:cover;border-radius:12px;opacity:.92}
+.sign{text-align:right;color:#9fb0d8;font-style:italic;margin-top:24px}
+{{custom_css}}
+</style>
+</head>
+<body>
+<main class="stars">
+  <div class="date">{{date}}</div>
+  <h1>{{title}}</h1>
+  <div class="to">献给 {{recipient}}</div>
+  <div class="text">
+    <p>{{opening}}</p>
+    {{body}}
+    <div class="photos">{{photos}}</div>
+    <p>{{closing}}</p>
+    <div class="sign">{{recipient}}</div>
+  </div>
+</main>
+</body>
+</html>

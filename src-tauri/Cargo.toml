@@ -20,5 +20,7 @@ serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 sysinfo = "0.30"
+uuid.workspace = true
+base64 = "0.22"
 anyhow = "1"
 connect-core = { path = "../crates/connect-core" }

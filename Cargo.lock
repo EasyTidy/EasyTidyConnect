@@ -605,12 +605,15 @@ dependencies = [
 
 [[package]]
 name = "connect-core"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.22.1",
  "chrono",
  "hex",
+ "hmac",
+ "percent-encoding",
  "rand 0.8.8",
  "reqwest 0.12.28",
  "rusqlite",
@@ -625,7 +628,7 @@ dependencies = [
 
 [[package]]
 name = "connectd"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "connect-core",
@@ -884,6 +887,7 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
+ "subtle",
 ]
 
 [[package]]
@@ -1030,9 +1034,10 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "easytidy-connect"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "connect-core",
  "serde",
  "serde_json",
@@ -1043,6 +1048,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -1680,6 +1686,15 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "hmac"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
+dependencies = [
+ "digest",
+]
 
 [[package]]
 name = "html5ever"

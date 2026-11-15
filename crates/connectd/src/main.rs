@@ -41,5 +41,5 @@ async fn main() -> Result<()> {
 
     std::fs::create_dir_all(&data_dir)?;
     let db = Arc::new(Database::open(&data_dir.join("connect.db"))?);
-    connect_core::server::serve(db, port).await
+    connect_core::server::serve(db, port, data_dir).await
 }

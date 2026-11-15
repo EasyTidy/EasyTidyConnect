@@ -66,3 +66,40 @@ fn settings_round_trip() {
 
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn anniversary_project_and_render() {
+    let (dir, db) = temp_db();
+    let input = connect_core::ProjectInput {
+        name: "纪念日".to_string(),
+        event_date: "2026-11-15".to_string(),
+        title: "给未来的我们".to_string(),
+        recipient: "小满".to_string(),
+        opening: "开场".to_string(),
+        body: "第一段\n第二段".to_string(),
+        closing: "结尾".to_string(),
+        template_id: "starry".to_string(),
+        theme: "#6ea8ff".to_string(),
+        custom_css: String::new(),
+    };
+
+    let project = db.create_project(&input).unwrap();
+    assert_eq!(project.slug.len(), 8);
+    assert_eq!(project.photos.len(), 0);
+
+    let loaded = db.get_project(project.id).unwrap().unwrap();
+    let html = connect_core::anniversary::render_project(&loaded, "photos/");
+    assert!(html.contains("给未来的我们"));
+    assert!(html.contains("小满"));
+    assert!(html.contains("#6ea8ff"));
+    assert!(html.contains("第一段"));
+
+    let version = db.add_project_version(project.id, "https://example.com/a").unwrap();
+    assert_eq!(version.version, 1);
+    assert_eq!(db.list_project_versions(project.id).unwrap().len(), 1);
+
+    db.delete_project(project.id).unwrap();
+    assert!(db.get_project(project.id).unwrap().is_none());
+
+    let _ = std::fs::remove_dir_all(dir);
+}

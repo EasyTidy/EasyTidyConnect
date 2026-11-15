@@ -1,4 +1,5 @@
 use std::net::UdpSocket;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,7 +15,9 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::anniversary::render_project;
 use crate::bridge::BridgeClient;
+use crate::publish::publish_project;
 use crate::db::Database;
 use crate::models::{Settings, TagPayload};
 
@@ -52,6 +55,7 @@ pub fn tag_payload(db: &Database, trigger_id: i64, port: u16) -> Result<TagPaylo
 struct ServerState {
     db: Arc<Database>,
     port: u16,
+    data_dir: PathBuf,
     http: Client,
 }
 
@@ -61,10 +65,11 @@ struct TriggerQuery {
     k: String,
 }
 
-pub async fn serve(db: Arc<Database>, port: u16) -> Result<()> {
+pub async fn serve(db: Arc<Database>, port: u16, data_dir: PathBuf) -> Result<()> {
     let state = Arc::new(ServerState {
         db,
         port,
+        data_dir,
         http: Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?,
@@ -74,6 +79,8 @@ pub async fn serve(db: Arc<Database>, port: u16) -> Result<()> {
         .route("/health", get(health))
         .route("/t/{public_id}", get(trigger))
         .route("/w/{write_token}", get(write_helper))
+        .route("/a/{slug}", get(anniversary_page))
+        .route("/a/{slug}/photos/{file}", get(anniversary_photo))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port))
@@ -315,6 +322,44 @@ async fn execute_action(
                 }),
             })
         }
+        "publish_anniversary" => {
+            let config: serde_json::Value = serde_json::from_str(action_config)
+                .map_err(|err| (StatusCode::BAD_REQUEST, format!("纪念日配置 JSON 无效：{err}")))?;
+            let project_id = config
+                .get("project_id")
+                .and_then(|value| value.as_i64())
+                .ok_or((StatusCode::BAD_REQUEST, "缺少纪念日项目 id".to_string()))?;
+            let target_id = config
+                .get("target_id")
+                .and_then(|value| value.as_i64())
+                .ok_or((StatusCode::BAD_REQUEST, "缺少发布目标 id".to_string()))?;
+
+            let project = state
+                .db
+                .get_project(project_id)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
+                .ok_or((StatusCode::NOT_FOUND, "纪念日项目不存在".to_string()))?;
+            let target = state
+                .db
+                .get_publish_target(target_id)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
+                .ok_or((StatusCode::NOT_FOUND, "发布目标不存在".to_string()))?;
+
+            let photos_dir = state
+                .data_dir
+                .join("anniversaries")
+                .join(project.id.to_string())
+                .join("photos");
+            let html = render_project(&project, "photos/");
+            let result = publish_project(&target, &project, &html, &photos_dir)
+                .await
+                .map_err(|err| (StatusCode::BAD_GATEWAY, format!("发布失败：{err}")))?;
+
+            Ok(ActionOutcome::message(
+                StatusCode::OK,
+                format!("已发布：{}", result.url),
+            ))
+        }
         "easytidy" => Err((
             StatusCode::BAD_REQUEST,
             "请把动作改为「EasyTidy 任务」或「EasyTidy 工作流」并选择目标。".to_string(),
@@ -324,6 +369,56 @@ async fn execute_action(
             "动作已触发（消息动作仅用于测试）。",
         )),
     }
+}
+
+async fn anniversary_page(
+    State(state): State<Arc<ServerState>>,
+    Path(slug): Path<String>,
+) -> Response {
+    let Ok(Some(project)) = state.db.get_project_by_slug(&slug) else {
+        return result_page(StatusCode::NOT_FOUND, "未找到纪念日", "项目不存在或已删除。");
+    };
+    let photo_base = format!("/a/{}/photos/", project.slug);
+    Html(render_project(&project, &photo_base)).into_response()
+}
+
+async fn anniversary_photo(
+    State(state): State<Arc<ServerState>>,
+    Path((slug, file)): Path<(String, String)>,
+) -> Response {
+    if file.contains('/') || file.contains('\\') || file.contains("..") {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let Ok(Some(project)) = state.db.get_project_by_slug(&slug) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let path = state
+        .data_dir
+        .join("anniversaries")
+        .join(project.id.to_string())
+        .join("photos")
+        .join(&file);
+    let Ok(bytes) = tokio::fs::read(&path).await else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let content_type = match file
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => "application/octet-stream",
+    };
+    (
+        [(axum::http::header::CONTENT_TYPE, content_type)],
+        bytes,
+    )
+        .into_response()
 }
 
 async fn write_helper(

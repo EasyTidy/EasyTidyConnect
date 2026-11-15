@@ -2,8 +2,8 @@
 
 独立、跨平台的 NFC 局域网触发器。碰一下 NTAG216，就能触发一个本地动作。
 
-> 当前是 M2：触发器、NFC、EasyTidy 本地 Bridge、任务/工作流触发、托盘、单实例、三种启动模式。
-> AI、纪念日发布、安装/更新在后续迭代加入。
+> 当前是 M3：触发器、NFC、EasyTidy Bridge、三种启动模式、纪念日工作室、AI 文案、S3/R2 发布。
+> 自动更新、Cloudflare Pages、凭证加密在后续迭代加入。
 
 ## 技术栈
 
@@ -73,18 +73,23 @@ src/                   # React UI
   - 跟随 EasyTidy：EasyTidy「文件投递」页可一键启动，`--embedded --parent-pid`，父进程退出后自动退出；
   - 独立开机启动；
   - 仅手动；
+- 纪念日工作室：
+  - 项目编辑、5 套模板、照片、本地预览；
+  - AI 文案（OpenAI 兼容 / Anthropic / Gemini）；
+  - S3 / MinIO / Cloudflare R2 发布；
 - 系统托盘：关闭窗口隐藏到托盘，服务继续；
 - 单实例：重复启动只唤醒已有窗口；
 - 开机启动：设置页开关会写入/移除系统自启项。
 
 ## 尚未实现
 
-- EasyTidy 内完整的安装/启用/停用/卸载 Connect 卡片；
-- AI provider 与纪念日模板/发布；
-- S3 / Cloudflare 发布；
+- Cloudflare Pages Direct Upload；
+- AI 集成模式复用 EasyTidy provider/key；
+- AI/发布凭证的系统密钥库加密（当前 SQLite 明文）；
+- 发布回滚 UI、版本预览；
 - 桌面 NFC 读卡器；
-- 密钥库（token 明文存在本地 SQLite/描述文件，后续迁移系统密钥库）；
-- 自动更新、代码签名。
+- 自动更新、代码签名；
+- macOS/Linux 实机打包与验证。
 
 ## 触发流程
 

@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
+import StudioPage from "./StudioPage";
 import { api, type BridgeItem, type Run, type Settings, type Status, type TagPayload, type Trigger } from "./api";
 
-type Page = "dashboard" | "triggers" | "tags" | "runs" | "settings";
+type Page = "dashboard" | "triggers" | "tags" | "studio" | "runs" | "settings";
 
 const NAV: { id: Page; label: string; icon: string }[] = [
   { id: "dashboard", label: "仪表盘", icon: "◉" },
   { id: "triggers", label: "触发器", icon: "⚡" },
   { id: "tags", label: "NFC 标签", icon: "◎" },
+  { id: "studio", label: "纪念日", icon: "✉" },
   { id: "runs", label: "运行历史", icon: "☰" },
   { id: "settings", label: "设置", icon: "⚙" },
 ];
@@ -19,6 +21,7 @@ const ACTION_LABELS: Record<string, string> = {
   easytidy_task: "运行 EasyTidy 任务",
   easytidy_workflow: "运行 EasyTidy 工作流",
   easytidy: "运行 EasyTidy",
+  publish_anniversary: "发布纪念日",
 };
 
 const ACTION_OPTIONS = [
@@ -27,6 +30,7 @@ const ACTION_OPTIONS = [
   { value: "open_url", label: "打开网页" },
   { value: "easytidy_task", label: "运行 EasyTidy 任务（需 Bridge）" },
   { value: "easytidy_workflow", label: "运行 EasyTidy 工作流（需 Bridge）" },
+  { value: "publish_anniversary", label: "发布纪念日网页" },
 ];
 
 function formatTime(value?: string | null) {
@@ -50,6 +54,15 @@ function actionSummary(trigger: Trigger) {
       const parsed = JSON.parse(trigger.action_config || "{}");
       if (parsed.name) return `${ACTION_LABELS[trigger.action_type]} · ${parsed.name}`;
       if (parsed.id) return `${ACTION_LABELS[trigger.action_type]} · #${parsed.id}`;
+    } catch {
+      // ignore
+    }
+  }
+  if (trigger.action_type === "publish_anniversary") {
+    try {
+      const parsed = JSON.parse(trigger.action_config || "{}");
+      if (parsed.project_name) return `发布纪念日 · ${parsed.project_name}`;
+      if (parsed.project_id) return `发布纪念日 · #${parsed.project_id}`;
     } catch {
       // ignore
     }
@@ -216,6 +229,7 @@ export default function App() {
           />
         )}
         {page === "runs" && <RunsPage runs={runs} onRefresh={refresh} />}
+        {page === "studio" && <StudioPage status={status} notify={notify} />}
         {page === "settings" && (
           <SettingsPage
             settings={settings}
@@ -851,9 +865,12 @@ function TriggerDialog(props: {
         url: parsed.url ?? "",
         id: parsed.id != null ? String(parsed.id) : "",
         name: parsed.name ?? "",
+        projectId: parsed.project_id != null ? String(parsed.project_id) : "",
+        targetId: parsed.target_id != null ? String(parsed.target_id) : "",
+        projectName: parsed.project_name ?? "",
       };
     } catch {
-      return { url: "", id: "", name: "" };
+      return { url: "", id: "", name: "", projectId: "", targetId: "", projectName: "" };
     }
   }, [props.trigger]);
 
@@ -863,11 +880,40 @@ function TriggerDialog(props: {
   const [targetId, setTargetId] = useState(initialConfig.id);
   const [targets, setTargets] = useState<BridgeItem[]>([]);
   const [targetError, setTargetError] = useState("");
+  const [projects, setProjects] = useState<{ id: number; name: string }[]>([]);
+  const [projectId, setProjectId] = useState(initialConfig.projectId);
+  const [publishTargets, setPublishTargets] = useState<{ id: number; name: string }[]>([]);
+  const [publishTargetId, setPublishTargetId] = useState(initialConfig.targetId);
+  const [anniversaryError, setAnniversaryError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const needsUrl = actionType === "webhook" || actionType === "open_url";
   const needsEasyTidy =
     actionType === "easytidy_task" || actionType === "easytidy_workflow";
+  const needsAnniversary = actionType === "publish_anniversary";
+
+  useEffect(() => {
+    if (!needsAnniversary) return;
+    let cancelled = false;
+    setAnniversaryError("");
+    Promise.all([api.projects(), api.publishTargets()])
+      .then(([projectList, targetList]) => {
+        if (cancelled) return;
+        setProjects(projectList.map((item) => ({ id: item.id, name: item.name })));
+        setPublishTargets(targetList.map((item) => ({ id: item.id, name: item.name })));
+        setProjectId((current) => current || (projectList[0] ? String(projectList[0].id) : ""));
+        setPublishTargetId((current) => current || (targetList[0] ? String(targetList[0].id) : ""));
+        if (projectList.length === 0 || targetList.length === 0) {
+          setAnniversaryError("请先在「纪念日」页创建项目，并添加发布目标。");
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) setAnniversaryError(`读取纪念日数据失败：${String(error)}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [needsAnniversary]);
 
   useEffect(() => {
     if (!needsEasyTidy) return;
@@ -913,9 +959,14 @@ function TriggerDialog(props: {
       props.onError("请选择 EasyTidy 任务或工作流");
       return;
     }
+    if (actionType === "publish_anniversary" && (!projectId || !publishTargetId)) {
+      props.onError("请选择纪念日项目和发布目标");
+      return;
+    }
     setBusy(true);
     try {
       const selected = targets.find((item) => String(item.id) === targetId);
+      const project = projects.find((item) => String(item.id) === projectId);
       const config = needsUrl
         ? JSON.stringify({ url: url.trim() })
         : needsEasyTidy
@@ -923,7 +974,13 @@ function TriggerDialog(props: {
               id: Number(targetId),
               name: selected?.name ?? initialConfig.name,
             })
-          : "{}";
+          : actionType === "publish_anniversary"
+            ? JSON.stringify({
+                project_id: Number(projectId),
+                project_name: project?.name ?? "",
+                target_id: Number(publishTargetId),
+              })
+            : "{}";
       if (props.trigger) {
         await api.updateTrigger(
           props.trigger.id,
@@ -976,6 +1033,43 @@ function TriggerDialog(props: {
               onChange={(event) => setUrl(event.target.value)}
             />
           </div>
+        )}
+        {needsAnniversary && (
+          <>
+            <div className="field">
+              <label>纪念日项目</label>
+              {anniversaryError ? (
+                <div className="tip">{anniversaryError}</div>
+              ) : (
+                <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+                  <option value="" disabled>
+                    请选择
+                  </option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name} (#{project.id})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div className="field">
+              <label>发布目标</label>
+              <select
+                value={publishTargetId}
+                onChange={(event) => setPublishTargetId(event.target.value)}
+              >
+                <option value="" disabled>
+                  请选择
+                </option>
+                {publishTargets.map((target) => (
+                  <option key={target.id} value={target.id}>
+                    {target.name} (#{target.id})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
         )}
         {needsEasyTidy && (
           <div className="field">

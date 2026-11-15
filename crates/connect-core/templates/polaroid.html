@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{title}}</title>
+<style>
+:root{--accent:{{theme}}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#ece7df;font-family:"PingFang SC","Microsoft YaHei",sans-serif;padding:48px 18px}
+.board{max-width:980px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:22px;align-items:start}
+.note{background:#fffdf8;padding:18px 18px 26px;box-shadow:0 12px 30px rgba(50,40,30,.16);transform:rotate(-1.2deg)}
+.note:nth-child(2n){transform:rotate(1.4deg)}
+.note h1{font-size:24px;margin:4px 0 8px;color:#2b2621}
+.note .to{color:#8a8178;font-size:13px}
+.note p{line-height:1.9;font-size:14px;color:#3a342e}
+.note img{width:100%;height:240px;object-fit:cover;background:#ddd;display:block;margin:10px 0}
+.date{display:inline-block;background:var(--accent);color:#fff;font-size:11px;padding:4px 10px;border-radius:999px;letter-spacing:.08em}
+.sign{text-align:right;font-style:italic;color:#6d645b;margin-top:18px}
+{{custom_css}}
+</style>
+</head>
+<body>
+<div class="board">
+  <article class="note">
+    <span class="date">{{date}}</span>
+    <h1>{{title}}</h1>
+    <div class="to">To {{recipient}}</div>
+    <p>{{opening}}</p>
+    {{body}}
+    <p>{{closing}}</p>
+    <div class="sign">{{recipient}}</div>
+  </article>
+  {{photos}}
+</div>
+</body>
+</html>

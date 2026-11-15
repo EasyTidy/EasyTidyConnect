@@ -2,9 +2,14 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use base64::Engine as _;
 use connect_core::bridge::{BridgeHealth, BridgeItem};
 use connect_core::db::Database;
-use connect_core::models::{RunView, Settings, TagPayload, TriggerView};
+use connect_core::models::{
+    AiProvider, AiProviderInput, AnniversaryProject, ProjectInput, ProjectVersion, PublishResult,
+    PublishTarget, PublishTargetInput, RunView, Settings, TagPayload, TriggerView,
+};
+use connect_core::ai::AiGenerateInput;
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
@@ -16,6 +21,7 @@ struct AppState {
     db: Arc<Database>,
     port: u16,
     server_ok: Arc<AtomicBool>,
+    data_dir: PathBuf,
 }
 
 #[derive(Serialize)]
@@ -285,6 +291,256 @@ fn spawn_parent_monitor(app: AppHandle, parent_pid: u32) {
     });
 }
 
+#[derive(Serialize)]
+struct TemplateInfo {
+    id: &'static str,
+    name: &'static str,
+}
+
+#[tauri::command]
+fn list_templates() -> Vec<TemplateInfo> {
+    connect_core::anniversary::TEMPLATES
+        .iter()
+        .map(|(id, name)| TemplateInfo { id, name })
+        .collect()
+}
+
+#[tauri::command]
+fn list_projects(state: State<'_, AppState>) -> Result<Vec<AnniversaryProject>, String> {
+    state.db.list_projects().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn get_project(state: State<'_, AppState>, id: i64) -> Result<Option<AnniversaryProject>, String> {
+    state.db.get_project(id).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn create_project(
+    state: State<'_, AppState>,
+    input: ProjectInput,
+) -> Result<AnniversaryProject, String> {
+    state.db.create_project(&input).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn update_project(
+    state: State<'_, AppState>,
+    id: i64,
+    input: ProjectInput,
+) -> Result<(), String> {
+    state
+        .db
+        .update_project(id, &input)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn delete_project(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    state.db.delete_project(id).map_err(|err| err.to_string())
+}
+
+fn project_photos_dir(state: &AppState, project_id: i64) -> PathBuf {
+    state
+        .data_dir
+        .join("anniversaries")
+        .join(project_id.to_string())
+        .join("photos")
+}
+
+#[tauri::command]
+fn add_project_photo(
+    state: State<'_, AppState>,
+    project_id: i64,
+    file_name: String,
+    data_base64: String,
+) -> Result<AnniversaryProject, String> {
+    let data = base64::engine::general_purpose::STANDARD
+        .decode(data_base64.as_bytes())
+        .map_err(|err| format!("图片 base64 无效：{err}"))?;
+    if data.len() > 12 * 1024 * 1024 {
+        return Err("单张图片不能超过 12 MB".to_string());
+    }
+
+    let ext = std::path::Path::new(&file_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("jpg")
+        .to_ascii_lowercase();
+    let ext = match ext.as_str() {
+        "jpg" | "jpeg" | "png" | "webp" | "gif" => ext,
+        _ => "jpg".to_string(),
+    };
+
+    let dir = project_photos_dir(&state, project_id);
+    std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    let stored = format!("{}.{}", uuid::Uuid::new_v4().simple(), ext);
+    std::fs::write(dir.join(&stored), data).map_err(|err| err.to_string())?;
+
+    let project = state
+        .db
+        .get_project(project_id)
+        .map_err(|err| err.to_string())?
+        .ok_or("项目不存在")?;
+    let mut photos = project.photos.clone();
+    photos.push(stored);
+    state
+        .db
+        .set_project_photos(project_id, &photos)
+        .map_err(|err| err.to_string())?;
+    state
+        .db
+        .get_project(project_id)
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "项目不存在".to_string())
+}
+
+#[tauri::command]
+fn remove_project_photo(
+    state: State<'_, AppState>,
+    project_id: i64,
+    file_name: String,
+) -> Result<(), String> {
+    if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
+        return Err("非法文件名".to_string());
+    }
+    let project = state
+        .db
+        .get_project(project_id)
+        .map_err(|err| err.to_string())?
+        .ok_or("项目不存在")?;
+    let photos = project
+        .photos
+        .iter()
+        .filter(|item| *item != &file_name)
+        .cloned()
+        .collect::<Vec<_>>();
+    let _ = std::fs::remove_file(project_photos_dir(&state, project_id).join(&file_name));
+    state
+        .db
+        .set_project_photos(project_id, &photos)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn list_project_versions(
+    state: State<'_, AppState>,
+    project_id: i64,
+) -> Result<Vec<ProjectVersion>, String> {
+    state
+        .db
+        .list_project_versions(project_id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn list_ai_providers(state: State<'_, AppState>) -> Result<Vec<AiProvider>, String> {
+    state.db.list_ai_providers().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn create_ai_provider(
+    state: State<'_, AppState>,
+    input: AiProviderInput,
+) -> Result<AiProvider, String> {
+    state
+        .db
+        .create_ai_provider(&input)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn delete_ai_provider(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    state
+        .db
+        .delete_ai_provider(id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn generate_copy(
+    state: State<'_, AppState>,
+    provider_id: i64,
+    input: AiGenerateInput,
+) -> Result<connect_core::GeneratedCopy, String> {
+    let provider = state
+        .db
+        .get_ai_provider(provider_id)
+        .map_err(|err| err.to_string())?
+        .ok_or("AI provider 不存在")?;
+    connect_core::ai::generate_copy(&provider, &input)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn list_publish_targets(state: State<'_, AppState>) -> Result<Vec<PublishTarget>, String> {
+    state
+        .db
+        .list_publish_targets()
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn create_publish_target(
+    state: State<'_, AppState>,
+    input: PublishTargetInput,
+) -> Result<PublishTarget, String> {
+    state
+        .db
+        .create_publish_target(&input)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn delete_publish_target(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    state
+        .db
+        .delete_publish_target(id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn test_publish_target(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    let target = state
+        .db
+        .get_publish_target(id)
+        .map_err(|err| err.to_string())?
+        .ok_or("发布目标不存在")?;
+    connect_core::publish::test_target(&target)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn publish_project(
+    state: State<'_, AppState>,
+    project_id: i64,
+    target_id: i64,
+) -> Result<PublishResult, String> {
+    let db = state.db.clone();
+    let data_dir = state.data_dir.clone();
+
+    let project = db
+        .get_project(project_id)
+        .map_err(|err| err.to_string())?
+        .ok_or("项目不存在")?;
+    let target = db
+        .get_publish_target(target_id)
+        .map_err(|err| err.to_string())?
+        .ok_or("发布目标不存在")?;
+    let photos_dir = data_dir
+        .join("anniversaries")
+        .join(project.id.to_string())
+        .join("photos");
+    let html = connect_core::anniversary::render_project(&project, "photos/");
+    let result = connect_core::publish::publish_project(&target, &project, &html, &photos_dir)
+        .await
+        .map_err(|err| err.to_string())?;
+    let _ = db.add_project_version(project.id, &result.url);
+    Ok(result)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -356,9 +612,12 @@ pub fn run() {
             let server_ok = Arc::new(AtomicBool::new(true));
             let server_ok_task = server_ok.clone();
             let db_task = db.clone();
+            let data_dir_task = app_dir.clone();
 
             tauri::async_runtime::spawn(async move {
-                if let Err(err) = connect_core::server::serve(db_task, port).await {
+                if let Err(err) =
+                    connect_core::server::serve(db_task, port, data_dir_task).await
+                {
                     tracing::error!("connect server stopped: {err}");
                     server_ok_task.store(false, Ordering::Relaxed);
                 }
@@ -368,6 +627,7 @@ pub fn run() {
                 db,
                 port,
                 server_ok,
+                data_dir: app_dir,
             });
 
             let show_item = MenuItem::with_id(app, "show", "打开 EasyTidy Connect", true, None::<&str>)?;
@@ -419,7 +679,25 @@ pub fn run() {
             test_bridge,
             bridge_tasks,
             bridge_workflows,
-            import_bridge
+            import_bridge,
+            list_templates,
+            list_projects,
+            get_project,
+            create_project,
+            update_project,
+            delete_project,
+            add_project_photo,
+            remove_project_photo,
+            list_project_versions,
+            list_ai_providers,
+            create_ai_provider,
+            delete_ai_provider,
+            generate_copy,
+            list_publish_targets,
+            create_publish_target,
+            delete_publish_target,
+            test_publish_target,
+            publish_project
         ])
         .run(tauri::generate_context!())
         .expect("error while running EasyTidy Connect");

@@ -6,7 +6,10 @@ use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-use crate::models::{RunView, Settings, TriggerRow, TriggerView};
+use crate::models::{
+    AiProvider, AiProviderInput, AnniversaryProject, ProjectInput, ProjectVersion, PublishTarget,
+    PublishTargetInput, RunView, Settings, TriggerRow, TriggerView,
+};
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -48,6 +51,55 @@ impl Database {
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS anniversary_projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                event_date TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                recipient TEXT NOT NULL DEFAULT '',
+                opening TEXT NOT NULL DEFAULT '',
+                body TEXT NOT NULL DEFAULT '',
+                closing TEXT NOT NULL DEFAULT '',
+                template_id TEXT NOT NULL DEFAULT 'minimal',
+                theme TEXT NOT NULL DEFAULT '#2563eb',
+                photos_json TEXT NOT NULL DEFAULT '[]',
+                custom_css TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS anniversary_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                version INTEGER NOT NULL,
+                published_url TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'published',
+                published_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS ai_providers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                base_url TEXT NOT NULL,
+                model TEXT NOT NULL,
+                api_key TEXT NOT NULL DEFAULT '',
+                is_default INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS publish_targets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                endpoint TEXT NOT NULL,
+                region TEXT NOT NULL DEFAULT 'auto',
+                bucket TEXT NOT NULL,
+                access_key TEXT NOT NULL,
+                secret_key TEXT NOT NULL,
+                prefix TEXT NOT NULL DEFAULT 'anniversary',
+                public_base_url TEXT NOT NULL DEFAULT '',
+                is_default INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
             );
             "#,
         )?;
@@ -297,6 +349,298 @@ impl Database {
         )?;
         Ok(())
     }
+
+    pub fn list_projects(&self) -> Result<Vec<AnniversaryProject>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, slug, name, event_date, title, recipient, opening, body, closing,
+                    template_id, theme, photos_json, custom_css, created_at, updated_at
+             FROM anniversary_projects ORDER BY id DESC",
+        )?;
+        let rows = stmt
+            .query_map([], map_project)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn get_project(&self, id: i64) -> Result<Option<AnniversaryProject>> {
+        let conn = self.lock()?;
+        conn.query_row(
+            "SELECT id, slug, name, event_date, title, recipient, opening, body, closing,
+                    template_id, theme, photos_json, custom_css, created_at, updated_at
+             FROM anniversary_projects WHERE id=?1",
+            params![id],
+            map_project,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub fn get_project_by_slug(&self, slug: &str) -> Result<Option<AnniversaryProject>> {
+        let conn = self.lock()?;
+        conn.query_row(
+            "SELECT id, slug, name, event_date, title, recipient, opening, body, closing,
+                    template_id, theme, photos_json, custom_css, created_at, updated_at
+             FROM anniversary_projects WHERE slug=?1",
+            params![slug],
+            map_project,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub fn create_project(&self, input: &ProjectInput) -> Result<AnniversaryProject> {
+        let slug = Uuid::new_v4().simple().to_string()[..8].to_string();
+        let now = Utc::now().to_rfc3339();
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO anniversary_projects
+             (slug, name, event_date, title, recipient, opening, body, closing,
+              template_id, theme, photos_json, custom_css, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'[]',?11,?12,?12)",
+            params![
+                slug,
+                input.name,
+                input.event_date,
+                input.title,
+                input.recipient,
+                input.opening,
+                input.body,
+                input.closing,
+                input.template_id,
+                input.theme,
+                input.custom_css,
+                now
+            ],
+        )?;
+        let id = conn.last_insert_rowid();
+        drop(conn);
+        self.get_project(id)?.context("created project missing")
+    }
+
+    pub fn update_project(&self, id: i64, input: &ProjectInput) -> Result<()> {
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE anniversary_projects SET
+                name=?1, event_date=?2, title=?3, recipient=?4, opening=?5, body=?6,
+                closing=?7, template_id=?8, theme=?9, custom_css=?10, updated_at=?11
+             WHERE id=?12",
+            params![
+                input.name,
+                input.event_date,
+                input.title,
+                input.recipient,
+                input.opening,
+                input.body,
+                input.closing,
+                input.template_id,
+                input.theme,
+                input.custom_css,
+                Utc::now().to_rfc3339(),
+                id
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_project(&self, id: i64) -> Result<()> {
+        let conn = self.lock()?;
+        conn.execute("DELETE FROM anniversary_projects WHERE id=?1", params![id])?;
+        conn.execute("DELETE FROM anniversary_versions WHERE project_id=?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn set_project_photos(&self, id: i64, photos: &[String]) -> Result<()> {
+        let json = serde_json::to_string(photos)?;
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE anniversary_projects SET photos_json=?1, updated_at=?2 WHERE id=?3",
+            params![json, Utc::now().to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn add_project_version(
+        &self,
+        project_id: i64,
+        published_url: &str,
+    ) -> Result<ProjectVersion> {
+        let conn = self.lock()?;
+        let version: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(version),0)+1 FROM anniversary_versions WHERE project_id=?1",
+                params![project_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(1);
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO anniversary_versions(project_id, version, published_url, status, published_at)
+             VALUES (?1,?2,?3,'published',?4)",
+            params![project_id, version, published_url, now],
+        )?;
+        Ok(ProjectVersion {
+            id: conn.last_insert_rowid(),
+            project_id,
+            version,
+            published_url: published_url.to_string(),
+            status: "published".to_string(),
+            published_at: now,
+        })
+    }
+
+    pub fn list_project_versions(&self, project_id: i64) -> Result<Vec<ProjectVersion>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, version, published_url, status, published_at
+             FROM anniversary_versions WHERE project_id=?1 ORDER BY version DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![project_id], |row| {
+                Ok(ProjectVersion {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    version: row.get(2)?,
+                    published_url: row.get(3)?,
+                    status: row.get(4)?,
+                    published_at: row.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn list_ai_providers(&self) -> Result<Vec<AiProvider>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, kind, base_url, model, api_key, is_default, created_at
+             FROM ai_providers ORDER BY id DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(AiProvider {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    kind: row.get(2)?,
+                    base_url: row.get(3)?,
+                    model: row.get(4)?,
+                    api_key: row.get(5)?,
+                    is_default: row.get::<_, i64>(6)? != 0,
+                    created_at: row.get(7)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn create_ai_provider(&self, input: &AiProviderInput) -> Result<AiProvider> {
+        let conn = self.lock()?;
+        if input.is_default {
+            conn.execute("UPDATE ai_providers SET is_default=0", [])?;
+        }
+        conn.execute(
+            "INSERT INTO ai_providers(name, kind, base_url, model, api_key, is_default, created_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            params![
+                input.name,
+                input.kind,
+                input.base_url,
+                input.model,
+                input.api_key,
+                if input.is_default { 1 } else { 0 },
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+        let id = conn.last_insert_rowid();
+        drop(conn);
+        self.list_ai_providers()?
+            .into_iter()
+            .find(|p| p.id == id)
+            .context("created ai provider missing")
+    }
+
+    pub fn delete_ai_provider(&self, id: i64) -> Result<()> {
+        let conn = self.lock()?;
+        conn.execute("DELETE FROM ai_providers WHERE id=?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn get_ai_provider(&self, id: i64) -> Result<Option<AiProvider>> {
+        Ok(self.list_ai_providers()?.into_iter().find(|p| p.id == id))
+    }
+
+    pub fn list_publish_targets(&self) -> Result<Vec<PublishTarget>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, kind, endpoint, region, bucket, access_key, secret_key,
+                    prefix, public_base_url, is_default, created_at
+             FROM publish_targets ORDER BY id DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(PublishTarget {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    kind: row.get(2)?,
+                    endpoint: row.get(3)?,
+                    region: row.get(4)?,
+                    bucket: row.get(5)?,
+                    access_key: row.get(6)?,
+                    secret_key: row.get(7)?,
+                    prefix: row.get(8)?,
+                    public_base_url: row.get(9)?,
+                    is_default: row.get::<_, i64>(10)? != 0,
+                    created_at: row.get(11)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn create_publish_target(&self, input: &PublishTargetInput) -> Result<PublishTarget> {
+        let conn = self.lock()?;
+        if input.is_default {
+            conn.execute("UPDATE publish_targets SET is_default=0", [])?;
+        }
+        conn.execute(
+            "INSERT INTO publish_targets
+             (name, kind, endpoint, region, bucket, access_key, secret_key, prefix,
+              public_base_url, is_default, created_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![
+                input.name,
+                input.kind,
+                input.endpoint,
+                input.region,
+                input.bucket,
+                input.access_key,
+                input.secret_key,
+                input.prefix,
+                input.public_base_url,
+                if input.is_default { 1 } else { 0 },
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+        let id = conn.last_insert_rowid();
+        drop(conn);
+        self.list_publish_targets()?
+            .into_iter()
+            .find(|p| p.id == id)
+            .context("created publish target missing")
+    }
+
+    pub fn delete_publish_target(&self, id: i64) -> Result<()> {
+        let conn = self.lock()?;
+        conn.execute("DELETE FROM publish_targets WHERE id=?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn get_publish_target(&self, id: i64) -> Result<Option<PublishTarget>> {
+        Ok(self
+            .list_publish_targets()?
+            .into_iter()
+            .find(|p| p.id == id))
+    }
 }
 
 fn map_trigger_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TriggerRow> {
@@ -312,6 +656,28 @@ fn map_trigger_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TriggerRow> {
         tag_written: row.get::<_, i64>(8)? != 0,
         verified_at: row.get(9)?,
         created_at: row.get(10)?,
+    })
+}
+
+fn map_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<AnniversaryProject> {
+    let photos_json: String = row.get(11)?;
+    let photos = serde_json::from_str(&photos_json).unwrap_or_default();
+    Ok(AnniversaryProject {
+        id: row.get(0)?,
+        slug: row.get(1)?,
+        name: row.get(2)?,
+        event_date: row.get(3)?,
+        title: row.get(4)?,
+        recipient: row.get(5)?,
+        opening: row.get(6)?,
+        body: row.get(7)?,
+        closing: row.get(8)?,
+        template_id: row.get(9)?,
+        theme: row.get(10)?,
+        photos,
+        custom_css: row.get(12)?,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
     })
 }
 

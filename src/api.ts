@@ -62,6 +62,94 @@ export type ImportedBridge = {
   version: string | null;
 };
 
+export type AnniversaryProject = {
+  id: number;
+  slug: string;
+  name: string;
+  event_date: string;
+  title: string;
+  recipient: string;
+  opening: string;
+  body: string;
+  closing: string;
+  template_id: string;
+  theme: string;
+  photos: string[];
+  custom_css: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectInput = Omit<
+  AnniversaryProject,
+  "id" | "slug" | "photos" | "created_at" | "updated_at"
+>;
+
+export type ProjectVersion = {
+  id: number;
+  project_id: number;
+  version: number;
+  published_url: string;
+  status: string;
+  published_at: string;
+};
+
+export type AiProvider = {
+  id: number;
+  name: string;
+  kind: string;
+  base_url: string;
+  model: string;
+  api_key: string;
+  is_default: boolean;
+  created_at: string;
+};
+
+export type AiProviderInput = Omit<AiProvider, "id" | "created_at">;
+
+export type AiGenerateInput = {
+  relationship: string;
+  tone: string;
+  keywords: string;
+  language: string;
+  length: string;
+};
+
+export type GeneratedCopy = {
+  title: string;
+  opening: string;
+  body: string;
+  closing: string;
+};
+
+export type PublishTarget = {
+  id: number;
+  name: string;
+  kind: string;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  access_key: string;
+  secret_key: string;
+  prefix: string;
+  public_base_url: string;
+  is_default: boolean;
+  created_at: string;
+};
+
+export type PublishTargetInput = Omit<PublishTarget, "id" | "created_at">;
+
+export type PublishResult = {
+  url: string;
+  slug: string;
+  uploaded: number;
+};
+
+export type TemplateInfo = {
+  id: string;
+  name: string;
+};
+
 export type Status = {
   running: boolean;
   port: number;
@@ -98,4 +186,30 @@ export const api = {
   bridgeWorkflows: (bridgeUrl: string, bridgeToken: string) =>
     invoke<BridgeItem[]>("bridge_workflows", { bridgeUrl, bridgeToken }),
   importBridge: () => invoke<ImportedBridge>("import_bridge"),
+  templates: () => invoke<TemplateInfo[]>("list_templates"),
+  projects: () => invoke<AnniversaryProject[]>("list_projects"),
+  project: (id: number) => invoke<AnniversaryProject | null>("get_project", { id }),
+  createProject: (input: ProjectInput) => invoke<AnniversaryProject>("create_project", { input }),
+  updateProject: (id: number, input: ProjectInput) =>
+    invoke<void>("update_project", { id, input }),
+  deleteProject: (id: number) => invoke<void>("delete_project", { id }),
+  addProjectPhoto: (projectId: number, fileName: string, dataBase64: string) =>
+    invoke<AnniversaryProject>("add_project_photo", { projectId, fileName, dataBase64 }),
+  removeProjectPhoto: (projectId: number, fileName: string) =>
+    invoke<void>("remove_project_photo", { projectId, fileName }),
+  projectVersions: (projectId: number) =>
+    invoke<ProjectVersion[]>("list_project_versions", { projectId }),
+  aiProviders: () => invoke<AiProvider[]>("list_ai_providers"),
+  createAiProvider: (input: AiProviderInput) =>
+    invoke<AiProvider>("create_ai_provider", { input }),
+  deleteAiProvider: (id: number) => invoke<void>("delete_ai_provider", { id }),
+  generateCopy: (providerId: number, input: AiGenerateInput) =>
+    invoke<GeneratedCopy>("generate_copy", { providerId, input }),
+  publishTargets: () => invoke<PublishTarget[]>("list_publish_targets"),
+  createPublishTarget: (input: PublishTargetInput) =>
+    invoke<PublishTarget>("create_publish_target", { input }),
+  deletePublishTarget: (id: number) => invoke<void>("delete_publish_target", { id }),
+  testPublishTarget: (id: number) => invoke<void>("test_publish_target", { id }),
+  publishProject: (projectId: number, targetId: number) =>
+    invoke<PublishResult>("publish_project", { projectId, targetId }),
 };
