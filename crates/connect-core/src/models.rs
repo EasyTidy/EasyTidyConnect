@@ -116,6 +116,12 @@ pub struct PublishTarget {
     pub secret_key: String,
     pub prefix: String,
     pub public_base_url: String,
+    #[serde(default)]
+    pub cloudflared_path: String,
+    #[serde(default)]
+    pub tunnel_token: String,
+    #[serde(default)]
+    pub hostname: String,
     pub is_default: bool,
     pub created_at: String,
 }
@@ -131,6 +137,12 @@ pub struct PublishTargetInput {
     pub secret_key: String,
     pub prefix: String,
     pub public_base_url: String,
+    #[serde(default)]
+    pub cloudflared_path: String,
+    #[serde(default)]
+    pub tunnel_token: String,
+    #[serde(default)]
+    pub hostname: String,
     #[serde(default)]
     pub is_default: bool,
 }

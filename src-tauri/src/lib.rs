@@ -22,6 +22,7 @@ struct AppState {
     port: u16,
     server_ok: Arc<AtomicBool>,
     data_dir: PathBuf,
+    tunnels: Arc<connect_core::TunnelManager>,
 }
 
 #[derive(Serialize)]
@@ -507,9 +508,17 @@ async fn test_publish_target(state: State<'_, AppState>, id: i64) -> Result<(), 
         .get_publish_target(id)
         .map_err(|err| err.to_string())?
         .ok_or("发布目标不存在")?;
-    connect_core::publish::test_target(&target)
-        .await
-        .map_err(|err| err.to_string())
+
+    if target.kind == "lan_tunnel" || target.kind == "cloudflare_tunnel" {
+        connect_core::tunnel::test_cloudflared(&target)
+            .await
+            .map(|_| ())
+            .map_err(|err| err.to_string())
+    } else {
+        connect_core::publish::test_target(&target)
+            .await
+            .map_err(|err| err.to_string())
+    }
 }
 
 #[tauri::command]
@@ -520,6 +529,7 @@ async fn publish_project(
 ) -> Result<PublishResult, String> {
     let db = state.db.clone();
     let data_dir = state.data_dir.clone();
+    let tunnels = state.tunnels.clone();
 
     let project = db
         .get_project(project_id)
@@ -529,6 +539,21 @@ async fn publish_project(
         .get_publish_target(target_id)
         .map_err(|err| err.to_string())?
         .ok_or("发布目标不存在")?;
+
+    if target.kind == "lan_tunnel" || target.kind == "cloudflare_tunnel" {
+        let tunnel = tunnels
+            .ensure(&target, connect_core::server::PUBLIC_PREVIEW_PORT)
+            .await
+            .map_err(|err| err.to_string())?;
+        let url = format!("{}/a/{}", tunnel.url.trim_end_matches('/'), project.slug);
+        let _ = db.add_project_version(project.id, &url);
+        return Ok(PublishResult {
+            url,
+            slug: project.slug,
+            uploaded: 0,
+        });
+    }
+
     let photos_dir = data_dir
         .join("anniversaries")
         .join(project.id.to_string())
@@ -613,13 +638,29 @@ pub fn run() {
             let server_ok_task = server_ok.clone();
             let db_task = db.clone();
             let data_dir_task = app_dir.clone();
+            let tunnels = Arc::new(connect_core::TunnelManager::new());
+            let tunnels_task = tunnels.clone();
 
             tauri::async_runtime::spawn(async move {
                 if let Err(err) =
-                    connect_core::server::serve(db_task, port, data_dir_task).await
+                    connect_core::server::serve(db_task, port, data_dir_task, tunnels_task).await
                 {
                     tracing::error!("connect server stopped: {err}");
                     server_ok_task.store(false, Ordering::Relaxed);
+                }
+            });
+
+            let public_db = db.clone();
+            let public_data = app_dir.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) = connect_core::server::serve_public(
+                    public_db,
+                    connect_core::server::PUBLIC_PREVIEW_PORT,
+                    public_data,
+                )
+                .await
+                {
+                    tracing::error!("public preview server stopped: {err}");
                 }
             });
 
@@ -628,6 +669,7 @@ pub fn run() {
                 port,
                 server_ok,
                 data_dir: app_dir,
+                tunnels,
             });
 
             let show_item = MenuItem::with_id(app, "show", "打开 EasyTidy Connect", true, None::<&str>)?;
@@ -699,6 +741,14 @@ pub fn run() {
             test_publish_target,
             publish_project
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running EasyTidy Connect");
+        .build(tauri::generate_context!())
+        .expect("error while building EasyTidy Connect")
+        .run(|app_handle, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                let tunnels = app_handle.state::<AppState>().tunnels.clone();
+                tauri::async_runtime::block_on(async move {
+                    tunnels.stop_all().await;
+                });
+            }
+        });
 }

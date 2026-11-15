@@ -495,7 +495,7 @@ export default function StudioPage({
               </option>
               {targets.map((target) => (
                 <option key={target.id} value={target.id}>
-                  {target.name} · {target.bucket}
+                  {target.name} · {target.bucket || target.kind}
                 </option>
               ))}
             </select>
@@ -666,12 +666,21 @@ function TargetDialog(props: {
     secret_key: "",
     prefix: "anniversary",
     public_base_url: "",
+    cloudflared_path: "",
+    tunnel_token: "",
+    hostname: "",
     is_default: true,
   });
 
+  const isS3 = form.kind === "s3" || form.kind === "r2";
+
   const save = async () => {
-    if (!form.bucket.trim()) {
+    if (isS3 && !form.bucket.trim()) {
       props.onError("请填写 bucket");
+      return;
+    }
+    if (form.kind === "cloudflare_tunnel" && (!form.tunnel_token.trim() || !form.hostname.trim())) {
+      props.onError("请填写 Tunnel Token 和公开 hostname");
       return;
     }
     try {
@@ -685,7 +694,7 @@ function TargetDialog(props: {
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <h2>添加 S3 / R2 发布目标</h2>
+        <h2>添加发布目标</h2>
         <div className="grid two" style={{ gridTemplateColumns: "1fr 1fr" }}>
           <div className="field">
             <label>名称</label>
@@ -696,53 +705,109 @@ function TargetDialog(props: {
             <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
               <option value="s3">S3 / MinIO</option>
               <option value="r2">Cloudflare R2</option>
+              <option value="lan_tunnel">局域网穿透（Quick Tunnel）</option>
+              <option value="cloudflare_tunnel">Cloudflare Tunnel</option>
             </select>
           </div>
-          <div className="field">
-            <label>Endpoint</label>
-            <input
-              value={form.endpoint}
-              onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
-            />
-          </div>
-          <div className="field">
-            <label>Region</label>
-            <input value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} />
-          </div>
-          <div className="field">
-            <label>Bucket</label>
-            <input value={form.bucket} onChange={(e) => setForm({ ...form, bucket: e.target.value })} />
-          </div>
-          <div className="field">
-            <label>路径前缀</label>
-            <input value={form.prefix} onChange={(e) => setForm({ ...form, prefix: e.target.value })} />
-          </div>
         </div>
-        <div className="grid two" style={{ gridTemplateColumns: "1fr 1fr" }}>
-          <div className="field">
-            <label>Access Key</label>
-            <input
-              value={form.access_key}
-              onChange={(e) => setForm({ ...form, access_key: e.target.value })}
-            />
-          </div>
-          <div className="field">
-            <label>Secret Key</label>
-            <input
-              type="password"
-              value={form.secret_key}
-              onChange={(e) => setForm({ ...form, secret_key: e.target.value })}
-            />
-          </div>
-        </div>
-        <div className="field">
-          <label>公开访问 Base URL（可选）</label>
-          <input
-            value={form.public_base_url}
-            placeholder="https://cdn.example.com"
-            onChange={(e) => setForm({ ...form, public_base_url: e.target.value })}
-          />
-        </div>
+
+        {isS3 && (
+          <>
+            <div className="grid two" style={{ gridTemplateColumns: "1fr 1fr" }}>
+              <div className="field">
+                <label>Endpoint</label>
+                <input
+                  value={form.endpoint}
+                  onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Region</label>
+                <input
+                  value={form.region}
+                  onChange={(e) => setForm({ ...form, region: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Bucket</label>
+                <input value={form.bucket} onChange={(e) => setForm({ ...form, bucket: e.target.value })} />
+              </div>
+              <div className="field">
+                <label>路径前缀</label>
+                <input value={form.prefix} onChange={(e) => setForm({ ...form, prefix: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid two" style={{ gridTemplateColumns: "1fr 1fr" }}>
+              <div className="field">
+                <label>Access Key</label>
+                <input
+                  value={form.access_key}
+                  onChange={(e) => setForm({ ...form, access_key: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Secret Key</label>
+                <input
+                  type="password"
+                  value={form.secret_key}
+                  onChange={(e) => setForm({ ...form, secret_key: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="field">
+              <label>公开访问 Base URL（可选）</label>
+              <input
+                value={form.public_base_url}
+                placeholder="https://cdn.example.com"
+                onChange={(e) => setForm({ ...form, public_base_url: e.target.value })}
+              />
+            </div>
+          </>
+        )}
+
+        {!isS3 && (
+          <>
+            <div className="field">
+              <label>cloudflared 路径（可选，默认 PATH）</label>
+              <input
+                value={form.cloudflared_path}
+                placeholder="C:\\Program Files\\cloudflared\\cloudflared.exe"
+                onChange={(e) => setForm({ ...form, cloudflared_path: e.target.value })}
+              />
+            </div>
+            {form.kind === "cloudflare_tunnel" && (
+              <>
+                <div className="field">
+                  <label>Tunnel Token</label>
+                  <input
+                    type="password"
+                    value={form.tunnel_token}
+                    onChange={(e) => setForm({ ...form, tunnel_token: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label>公开 hostname</label>
+                  <input
+                    value={form.hostname}
+                    placeholder="anniversary.example.com"
+                    onChange={(e) => setForm({ ...form, hostname: e.target.value })}
+                  />
+                </div>
+                <div className="tip">
+                  在 Cloudflare Zero Trust 中把该 hostname 的 ingress 指向
+                  <code> http://127.0.0.1:53410</code>。Connect 只在该端口暴露 /a/*。
+                </div>
+              </>
+            )}
+            {form.kind === "lan_tunnel" && (
+              <div className="tip">
+                使用 cloudflared Quick Tunnel，随机生成 trycloudflare.com 地址；
+                公开端口只暴露纪念日页面，不暴露 NFC 触发和写入接口。
+              </div>
+            )}
+          </>
+        )}
+
         <div className="modal-actions">
           <button className="btn" onClick={props.onClose}>
             取消

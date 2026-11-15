@@ -41,5 +41,24 @@ async fn main() -> Result<()> {
 
     std::fs::create_dir_all(&data_dir)?;
     let db = Arc::new(Database::open(&data_dir.join("connect.db"))?);
-    connect_core::server::serve(db, port, data_dir).await
+    let public_db = db.clone();
+    let public_data = data_dir.clone();
+    tokio::spawn(async move {
+        if let Err(err) = connect_core::server::serve_public(
+            public_db,
+            connect_core::server::PUBLIC_PREVIEW_PORT,
+            public_data,
+        )
+        .await
+        {
+            tracing::error!("public preview server stopped: {err}");
+        }
+    });
+    connect_core::server::serve(
+        db,
+        port,
+        data_dir,
+        Arc::new(connect_core::TunnelManager::new()),
+    )
+    .await
 }

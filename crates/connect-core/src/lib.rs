@@ -5,6 +5,7 @@ pub mod db;
 pub mod models;
 pub mod publish;
 pub mod server;
+pub mod tunnel;
 
 pub use bridge::{BridgeClient, BridgeHealth, BridgeItem, BridgeRunAccepted};
 pub use db::Database;
@@ -13,3 +14,4 @@ pub use models::{
     PublishResult, PublishTarget, PublishTargetInput, RunView, Settings, TagPayload, TriggerView,
 };
 pub use server::{local_ip, tag_payload};
+pub use tunnel::TunnelManager;

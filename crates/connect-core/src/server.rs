@@ -18,11 +18,13 @@ use serde_json::json;
 use crate::anniversary::render_project;
 use crate::bridge::BridgeClient;
 use crate::publish::publish_project;
+
+/// 公开预览端口：只暴露 /a/*，供隧道使用。
+pub const PUBLIC_PREVIEW_PORT: u16 = 53410;
 use crate::db::Database;
 use crate::models::{Settings, TagPayload};
 
-pub fn local_ip() -> String {
-    UdpSocket::bind("0.0.0.0:0")
+pub fn local_ip() -> String {    UdpSocket::bind("0.0.0.0:0")
         .and_then(|socket| {
             socket.connect("8.8.8.8:80")?;
             socket.local_addr()
@@ -31,8 +33,7 @@ pub fn local_ip() -> String {
         .unwrap_or_else(|_| "127.0.0.1".to_string())
 }
 
-pub fn tag_payload(db: &Database, trigger_id: i64, port: u16) -> Result<TagPayload> {
-    let row = db
+pub fn tag_payload(db: &Database, trigger_id: i64, port: u16) -> Result<TagPayload> {    let row = db
         .find_by_id(trigger_id)?
         .ok_or_else(|| anyhow::anyhow!("trigger not found"))?;
     let host = local_ip();
@@ -57,6 +58,7 @@ struct ServerState {
     port: u16,
     data_dir: PathBuf,
     http: Client,
+    tunnels: Arc<crate::tunnel::TunnelManager>,
 }
 
 #[derive(Deserialize)]
@@ -65,7 +67,12 @@ struct TriggerQuery {
     k: String,
 }
 
-pub async fn serve(db: Arc<Database>, port: u16, data_dir: PathBuf) -> Result<()> {
+pub async fn serve(
+    db: Arc<Database>,
+    port: u16,
+    data_dir: PathBuf,
+    tunnels: Arc<crate::tunnel::TunnelManager>,
+) -> Result<()> {
     let state = Arc::new(ServerState {
         db,
         port,
@@ -73,6 +80,7 @@ pub async fn serve(db: Arc<Database>, port: u16, data_dir: PathBuf) -> Result<()
         http: Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?,
+        tunnels,
     });
 
     let app = Router::new()
@@ -100,6 +108,40 @@ async fn health(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
         "port": state.port,
         "ip": local_ip()
     }))
+}
+
+/// 公开预览服务：只暴露 /a/*，不暴露 /t 和 /w。
+pub async fn serve_public(
+    db: Arc<Database>,
+    port: u16,
+    data_dir: PathBuf,
+) -> Result<()> {
+    let state = Arc::new(ServerState {
+        db,
+        port,
+        data_dir,
+        http: Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()?,
+        tunnels: Arc::new(crate::tunnel::TunnelManager::new()),
+    });
+
+    let app = Router::new()
+        .route("/health", get(public_health))
+        .route("/a/{slug}", get(anniversary_page))
+        .route("/a/{slug}/photos/{file}", get(anniversary_photo))
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+        .await
+        .map_err(|err| anyhow::anyhow!("bind public 127.0.0.1:{port}: {err}"))?;
+    tracing::info!("public preview listening on http://127.0.0.1:{port}");
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+async fn public_health() -> impl IntoResponse {
+    Json(json!({"status": "ok", "public": true}))
 }
 
 #[derive(Clone)]
@@ -344,6 +386,18 @@ async fn execute_action(
                 .get_publish_target(target_id)
                 .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
                 .ok_or((StatusCode::NOT_FOUND, "发布目标不存在".to_string()))?;
+
+            if target.kind == "lan_tunnel" || target.kind == "cloudflare_tunnel" {
+                let tunnel = state
+                    .tunnels
+                    .ensure(&target, PUBLIC_PREVIEW_PORT)
+                    .await
+                    .map_err(|err| (StatusCode::BAD_GATEWAY, format!("启动隧道失败：{err}")))?;
+                return Ok(ActionOutcome::message(
+                    StatusCode::OK,
+                    format!("已发布：{}/a/{}", tunnel.url.trim_end_matches('/'), project.slug),
+                ));
+            }
 
             let photos_dir = state
                 .data_dir
