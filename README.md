@@ -57,6 +57,7 @@ src/                   # React UI
 - 写入辅助页：手机浏览器复制 URI，供 NFC Tools 写入；
 - 局域网结果页 `/t/{publicId}?k={token}`；
 - 运行历史、成功/失败状态；
+- EasyTidy 任务/工作流运行后每 2 秒轮询 Bridge，自动更新为成功/失败；
 - 标记“已写入”，首次成功触发后自动标记“已验证”；
 - EasyTidy 本地 Bridge：
   - 从 EasyTidy 写入的 `connect-bridge.json` 自动导入地址/token；

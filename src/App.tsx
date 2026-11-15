@@ -119,6 +119,14 @@ export default function App() {
       .catch((error) => notify(`生成标签失败：${String(error)}`, true));
   }, [selectedTag, triggers]);
 
+  useEffect(() => {
+    if (page !== "runs" && page !== "dashboard") return;
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [page]);
+
   const activeTriggers = triggers.filter((trigger) => trigger.enabled).length;
   const successRuns = runs.filter((run) => run.status === "success").length;
 
@@ -587,6 +595,7 @@ function RunsPage({ runs, onRefresh }: { runs: Run[]; onRefresh: () => void }) {
                 <th>触发器</th>
                 <th>状态</th>
                 <th>来源</th>
+                <th>EasyTidy 运行</th>
                 <th>错误</th>
               </tr>
             </thead>
@@ -599,6 +608,9 @@ function RunsPage({ runs, onRefresh }: { runs: Run[]; onRefresh: () => void }) {
                     <StatusPill status={run.status} />
                   </td>
                   <td>{run.source}</td>
+                  <td style={{ fontFamily: "Cascadia Code, Consolas, monospace", fontSize: 11 }}>
+                    {run.external_run_id ?? "-"}
+                  </td>
                   <td style={{ color: "#b42318" }}>{run.error ?? ""}</td>
                 </tr>
               ))}

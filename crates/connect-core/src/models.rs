@@ -36,6 +36,7 @@ pub struct RunView {
     pub started_at: String,
     pub finished_at: Option<String>,
     pub error: Option<String>,
+    pub external_run_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -95,6 +95,29 @@ async fn health(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
     }))
 }
 
+#[derive(Clone)]
+struct ExternalRun {
+    bridge_url: String,
+    bridge_token: String,
+    run_id: String,
+}
+
+struct ActionOutcome {
+    status: StatusCode,
+    message: String,
+    external: Option<ExternalRun>,
+}
+
+impl ActionOutcome {
+    fn message(status: StatusCode, message: impl Into<String>) -> Self {
+        Self {
+            status,
+            message: message.into(),
+            external: None,
+        }
+    }
+}
+
 async fn trigger(
     State(state): State<Arc<ServerState>>,
     Path(public_id): Path<String>,
@@ -130,10 +153,17 @@ async fn trigger(
     let result = execute_action(&state, &row.action_type, &row.action_config, &settings).await;
 
     match result {
-        Ok((status, message)) => {
-            let _ = state.db.finish_run(run_id, "success", None);
-            let _ = state.db.mark_verified(row.id);
-            result_page(status, &format!("已触发：{}", row.name), &message)
+        Ok(outcome) => {
+            if let Some(external) = outcome.external {
+                let _ = state.db.set_external_run(run_id, &external.run_id);
+                let _ = state.db.mark_verified(row.id);
+                spawn_external_poll(state.db.clone(), external, run_id);
+                result_page(outcome.status, &format!("已触发：{}", row.name), &outcome.message)
+            } else {
+                let _ = state.db.finish_run(run_id, "success", None);
+                let _ = state.db.mark_verified(row.id);
+                result_page(outcome.status, &format!("已触发：{}", row.name), &outcome.message)
+            }
         }
         Err((status, message)) => {
             let _ = state.db.finish_run(run_id, "failed", Some(&message));
@@ -142,12 +172,49 @@ async fn trigger(
     }
 }
 
+fn spawn_external_poll(db: Arc<Database>, external: ExternalRun, run_id: i64) {
+    tokio::spawn(async move {
+        let client = match BridgeClient::new() {
+            Ok(client) => client,
+            Err(err) => {
+                let _ = db.finish_run(run_id, "failed", Some(&format!("无法创建 Bridge 客户端：{err}")));
+                return;
+            }
+        };
+
+        // 最多轮询 10 分钟。
+        for _ in 0..300 {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            match client
+                .run_status(&external.bridge_url, &external.bridge_token, &external.run_id)
+                .await
+            {
+                Ok(status) if status.status == "success" => {
+                    let _ = db.finish_run(run_id, "success", None);
+                    return;
+                }
+                Ok(status) if status.status == "failed" => {
+                    let error = status.error.unwrap_or_else(|| "EasyTidy 运行失败".to_string());
+                    let _ = db.finish_run(run_id, "failed", Some(&error));
+                    return;
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    tracing::debug!("bridge run status poll failed: {err}");
+                }
+            }
+        }
+
+        let _ = db.finish_run(run_id, "failed", Some("EasyTidy 运行超时（10 分钟）"));
+    });
+}
+
 async fn execute_action(
     state: &ServerState,
     action_type: &str,
     action_config: &str,
     settings: &Settings,
-) -> Result<(StatusCode, String), (StatusCode, String)> {
+) -> Result<ActionOutcome, (StatusCode, String)> {
     match action_type {
         "webhook" => {
             let config: serde_json::Value = serde_json::from_str(action_config)
@@ -171,7 +238,10 @@ async fn execute_action(
 
             let code = response.status().as_u16();
             if response.status().is_success() {
-                Ok((StatusCode::OK, format!("Webhook 已调用，HTTP {code}。")))
+                Ok(ActionOutcome::message(
+                    StatusCode::OK,
+                    format!("Webhook 已调用，HTTP {code}。"),
+                ))
             } else {
                 Err((StatusCode::BAD_GATEWAY, format!("Webhook 返回 HTTP {code}。")))
             }
@@ -183,7 +253,10 @@ async fn execute_action(
                 .get("url")
                 .and_then(|value| value.as_str())
                 .ok_or((StatusCode::BAD_REQUEST, "缺少 url".to_string()))?;
-            Ok((StatusCode::OK, format!("请打开：{url}")))
+            Ok(ActionOutcome::message(
+                StatusCode::OK,
+                format!("请打开：{url}"),
+            ))
         }
         "easytidy_task" | "easytidy_workflow" => {
             let config: serde_json::Value = serde_json::from_str(action_config)
@@ -228,21 +301,27 @@ async fn execute_action(
             } else {
                 "工作流"
             };
-            Ok((
-                StatusCode::OK,
-                format!(
-                    "已提交 EasyTidy {kind}「{name}」，运行 ID {}。",
-                    accepted.run_id
-                ),
-            ))
+            let message = format!(
+                "已提交 EasyTidy {kind}「{name}」，运行 ID {}，正在后台跟踪结果。",
+                accepted.run_id
+            );
+            Ok(ActionOutcome {
+                status: StatusCode::OK,
+                message,
+                external: Some(ExternalRun {
+                    bridge_url: settings.bridge_url.clone(),
+                    bridge_token: settings.bridge_token.clone(),
+                    run_id: accepted.run_id,
+                }),
+            })
         }
         "easytidy" => Err((
             StatusCode::BAD_REQUEST,
             "请把动作改为「EasyTidy 任务」或「EasyTidy 工作流」并选择目标。".to_string(),
         )),
-        _ => Ok((
+        _ => Ok(ActionOutcome::message(
             StatusCode::OK,
-            "动作已触发（消息动作仅用于测试）。".to_string(),
+            "动作已触发（消息动作仅用于测试）。",
         )),
     }
 }

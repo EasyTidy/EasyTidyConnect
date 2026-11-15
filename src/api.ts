@@ -31,6 +31,7 @@ export type Run = {
   started_at: string;
   finished_at: string | null;
   error: string | null;
+  external_run_id: string | null;
 };
 
 export type Settings = {

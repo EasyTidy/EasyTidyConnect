@@ -42,7 +42,8 @@ impl Database {
                 source TEXT NOT NULL,
                 started_at TEXT NOT NULL,
                 finished_at TEXT,
-                error TEXT
+                error TEXT,
+                external_run_id TEXT
             );
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
@@ -50,6 +51,9 @@ impl Database {
             );
             "#,
         )?;
+
+        // 兼容 M1/M2 早期数据库。
+        let _ = conn.execute("ALTER TABLE runs ADD COLUMN external_run_id TEXT", []);
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -219,11 +223,20 @@ impl Database {
         Ok(())
     }
 
+    pub fn set_external_run(&self, id: i64, external_run_id: &str) -> Result<()> {
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE runs SET external_run_id=?1 WHERE id=?2",
+            params![external_run_id, id],
+        )?;
+        Ok(())
+    }
+
     pub fn list_runs(&self, limit: i64) -> Result<Vec<RunView>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
             "SELECT r.id, r.trigger_id, COALESCE(t.name, '(deleted)'), r.status, r.source,
-                    r.started_at, r.finished_at, r.error
+                    r.started_at, r.finished_at, r.error, r.external_run_id
              FROM runs r LEFT JOIN triggers t ON t.id = r.trigger_id
              ORDER BY r.id DESC LIMIT ?1",
         )?;
@@ -238,6 +251,7 @@ impl Database {
                     started_at: row.get(5)?,
                     finished_at: row.get(6)?,
                     error: row.get(7)?,
+                    external_run_id: row.get(8)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
