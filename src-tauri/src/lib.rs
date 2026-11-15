@@ -424,6 +424,118 @@ fn remove_project_photo(
 }
 
 #[tauri::command]
+fn render_preview(state: State<'_, AppState>, project: AnniversaryProject) -> String {
+    let photo_base = format!(
+        "http://127.0.0.1:{}/a/{}/photos/",
+        state.port, project.slug
+    );
+    let media_base = format!(
+        "http://127.0.0.1:{}/a/{}/media/",
+        state.port, project.slug
+    );
+    connect_core::anniversary::render_project(&project, &photo_base, &media_base)
+}
+
+#[tauri::command]
+fn add_project_media(
+    state: State<'_, AppState>,
+    project_id: i64,
+    kind: String,
+    file_name: String,
+    data_base64: String,
+) -> Result<AnniversaryProject, String> {
+    if kind != "music" && kind != "video" {
+        return Err("kind 必须是 music 或 video".to_string());
+    }
+    let data = base64::engine::general_purpose::STANDARD
+        .decode(data_base64.as_bytes())
+        .map_err(|err| format!("文件 base64 无效：{err}"))?;
+    if data.len() > 40 * 1024 * 1024 {
+        return Err("单个音视频文件不能超过 40 MB".to_string());
+    }
+
+    let ext = std::path::Path::new(&file_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("bin")
+        .to_ascii_lowercase();
+    let allowed = if kind == "music" {
+        ["mp3", "m4a", "wav", "ogg"].contains(&ext.as_str())
+    } else {
+        ["mp4", "webm", "mov"].contains(&ext.as_str())
+    };
+    if !allowed {
+        return Err("不支持的音视频格式".to_string());
+    }
+
+    let dir = state
+        .data_dir
+        .join("anniversaries")
+        .join(project_id.to_string())
+        .join("media");
+    std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    let stored = format!("{}.{}", uuid::Uuid::new_v4().simple(), ext);
+    std::fs::write(dir.join(&stored), data).map_err(|err| err.to_string())?;
+
+    let project = state
+        .db
+        .get_project(project_id)
+        .map_err(|err| err.to_string())?
+        .ok_or("项目不存在")?;
+    let old = if kind == "music" {
+        project.music.clone()
+    } else {
+        project.video.clone()
+    };
+    if !old.is_empty() && !old.starts_with("http") {
+        let _ = std::fs::remove_file(dir.join(old.trim_start_matches("media/")));
+    }
+
+    state
+        .db
+        .set_project_media(project_id, &kind, &stored)
+        .map_err(|err| err.to_string())?;
+    state
+        .db
+        .get_project(project_id)
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "项目不存在".to_string())
+}
+
+#[tauri::command]
+fn remove_project_media(
+    state: State<'_, AppState>,
+    project_id: i64,
+    kind: String,
+) -> Result<(), String> {
+    if kind != "music" && kind != "video" {
+        return Err("kind 必须是 music 或 video".to_string());
+    }
+    let project = state
+        .db
+        .get_project(project_id)
+        .map_err(|err| err.to_string())?
+        .ok_or("项目不存在")?;
+    let old = if kind == "music" {
+        project.music
+    } else {
+        project.video
+    };
+    if !old.is_empty() && !old.starts_with("http") {
+        let dir = state
+            .data_dir
+            .join("anniversaries")
+            .join(project_id.to_string())
+            .join("media");
+        let _ = std::fs::remove_file(dir.join(old.trim_start_matches("media/")));
+    }
+    state
+        .db
+        .set_project_media(project_id, &kind, "")
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 fn list_project_versions(
     state: State<'_, AppState>,
     project_id: i64,
@@ -562,17 +674,33 @@ async fn publish_project(
         .join("anniversaries")
         .join(project.id.to_string())
         .join("photos");
-    let html = connect_core::anniversary::render_project(&project, "photos/");
+    let media_dir = data_dir
+        .join("anniversaries")
+        .join(project.id.to_string())
+        .join("media");
+    let html = connect_core::anniversary::render_project(&project, "photos/", "media/");
 
     if target.kind == "cloudflare_pages" {
-        let result = connect_core::pages::publish_project(&target, &project, &html, &photos_dir)
-            .await
-            .map_err(|err| err.to_string())?;
+        let result = connect_core::pages::publish_project(
+            &target,
+            &project,
+            &html,
+            &photos_dir,
+            &media_dir,
+        )
+        .await
+        .map_err(|err| err.to_string())?;
         let _ = db.add_project_version(project.id, &result.url);
         return Ok(result);
     }
 
-    let result = connect_core::publish::publish_project(&target, &project, &html, &photos_dir)
+    let result = connect_core::publish::publish_project(
+        &target,
+        &project,
+        &html,
+        &photos_dir,
+        &media_dir,
+    )
         .await
         .map_err(|err| err.to_string())?;
     let _ = db.add_project_version(project.id, &result.url);
@@ -588,6 +716,7 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_opener::init())
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
@@ -743,6 +872,9 @@ pub fn run() {
             delete_project,
             add_project_photo,
             remove_project_photo,
+            add_project_media,
+            remove_project_media,
+            render_preview,
             list_project_versions,
             list_ai_providers,
             create_ai_provider,

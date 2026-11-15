@@ -7,29 +7,38 @@
 <style>
 :root{--accent:{{theme}}}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f5f1;color:#24201c;font-family:"Songti SC","Noto Serif SC",Georgia,serif}
-.card{width:min(720px,92vw);padding:56px 48px;background:#fff;border-radius:2px;box-shadow:0 24px 80px rgba(40,32,24,.14);position:relative}
-.card:before{content:"";position:absolute;inset:16px;border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);pointer-events:none}
-.date{letter-spacing:.2em;color:var(--accent);font-size:12px;text-transform:uppercase}
-h1{font-size:clamp(30px,5vw,48px);margin:18px 0 6px;font-weight:600}
-.to{color:#8a8178;font-size:14px;margin-bottom:30px}
-p{line-height:2;font-size:16px;margin:0 0 16px}
-.photos{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:28px 0}
-.photos img{width:100%;height:220px;object-fit:cover;border-radius:4px;display:block}
-.sign{margin-top:36px;text-align:right;color:#5c554d;font-style:italic}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:44px 16px;background:radial-gradient(circle at 20% 10%,#fff9f2 0,#f4ede3 45%,#eadfd2 100%);color:#352d27;font-family:"Songti SC","Noto Serif SC",Georgia,serif}
+.card{position:relative;width:min(760px,94vw);padding:64px 58px 52px;background:linear-gradient(160deg,#fffdf9,#fbf6ed);border:1px solid rgba(120,90,60,.18);box-shadow:0 30px 90px rgba(80,55,35,.16);overflow:hidden}
+.card:before,.card:after{content:"";position:absolute;width:120px;height:120px;border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);border-radius:50%}
+.card:before{left:-58px;top:-58px}
+.card:after{right:-58px;bottom:-58px}
+.monogram{width:46px;height:46px;border:1px solid var(--accent);border-radius:50%;display:grid;place-items:center;color:var(--accent);font-size:13px;letter-spacing:.12em;margin:0 auto 26px}
+.date{text-align:center;color:var(--accent);font-size:11px;letter-spacing:.42em;text-transform:uppercase}
+h1{font-size:clamp(30px,5vw,50px);font-weight:500;text-align:center;line-height:1.28;margin:18px auto 12px;max-width:12em;letter-spacing:.04em}
+.to{text-align:center;color:#9a8b7b;font-size:13px;letter-spacing:.16em;margin-bottom:38px}
+.rule{width:46px;height:1px;background:var(--accent);margin:0 auto 34px;opacity:.6}
+p{font-size:16px;line-height:2.1;margin:0 0 18px;text-align:justify}
+p:first-letter{font-size:2.1em;float:left;line-height:1;padding:6px 10px 0 0;color:var(--accent);font-family:Georgia,serif}
+.photos{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:30px 0}
+.photos img{width:100%;height:230px;object-fit:cover;border-radius:2px;box-shadow:0 10px 26px rgba(70,50,30,.14)}
+.sign{margin-top:40px;display:flex;align-items:center;justify-content:flex-end;gap:14px;color:#6d5c4c;font-style:italic}
+.seal{width:48px;height:48px;border-radius:50%;border:1px solid color-mix(in srgb,var(--accent) 55%,#fff);display:grid;place-items:center;color:var(--accent);font-size:10px;letter-spacing:.1em;font-style:normal;transform:rotate(-8deg)}
 {{custom_css}}
 </style>
 </head>
 <body>
 <main class="card">
+  <div class="monogram">FOREVER</div>
   <div class="date">{{date}}</div>
   <h1>{{title}}</h1>
-  <div class="to">写给 {{recipient}}</div>
+  <div class="to">TO {{recipient}}</div>
+  <div class="rule"></div>
   <p>{{opening}}</p>
   {{body}}
   <div class="photos">{{photos}}</div>
+  {{media}}
   <p>{{closing}}</p>
-  <div class="sign">{{recipient}} 收</div>
+  <div class="sign"><span>{{recipient}}</span><span class="seal">LOVE</span></div>
 </main>
 </body>
 </html>

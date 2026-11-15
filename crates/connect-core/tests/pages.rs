@@ -81,6 +81,8 @@ fn project() -> AnniversaryProject {
         template_id: "minimal".to_string(),
         theme: "#2563eb".to_string(),
         photos: vec![],
+        music: String::new(),
+        video: String::new(),
         custom_css: String::new(),
         created_at: String::new(),
         updated_at: String::new(),
@@ -124,6 +126,7 @@ async fn pages_direct_upload_creates_deployment() {
         &target,
         &project,
         html,
+        std::path::Path::new("/nonexistent"),
         std::path::Path::new("/nonexistent"),
     )
     .await

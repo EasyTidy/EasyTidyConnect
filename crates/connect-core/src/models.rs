@@ -54,6 +54,10 @@ pub struct AnniversaryProject {
     pub theme: String,
     #[serde(default)]
     pub photos: Vec<String>,
+    #[serde(default)]
+    pub music: String,
+    #[serde(default)]
+    pub video: String,
     pub custom_css: String,
     pub created_at: String,
     pub updated_at: String,
@@ -70,6 +74,10 @@ pub struct ProjectInput {
     pub closing: String,
     pub template_id: String,
     pub theme: String,
+    #[serde(default)]
+    pub music: String,
+    #[serde(default)]
+    pub video: String,
     pub custom_css: String,
 }
 

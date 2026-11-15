@@ -80,6 +80,8 @@ fn anniversary_project_and_render() {
         closing: "结尾".to_string(),
         template_id: "starry".to_string(),
         theme: "#6ea8ff".to_string(),
+        music: String::new(),
+        video: String::new(),
         custom_css: String::new(),
     };
 
@@ -88,7 +90,7 @@ fn anniversary_project_and_render() {
     assert_eq!(project.photos.len(), 0);
 
     let loaded = db.get_project(project.id).unwrap().unwrap();
-    let html = connect_core::anniversary::render_project(&loaded, "photos/");
+    let html = connect_core::anniversary::render_project(&loaded, "photos/", "media/");
     assert!(html.contains("给未来的我们"));
     assert!(html.contains("小满"));
     assert!(html.contains("#6ea8ff"));

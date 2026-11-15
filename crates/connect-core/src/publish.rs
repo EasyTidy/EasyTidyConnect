@@ -43,6 +43,7 @@ pub async fn publish_project(
     project: &AnniversaryProject,
     html: &str,
     photos_dir: &Path,
+    media_dir: &Path,
 ) -> Result<PublishResult> {
     if target.kind == "cloudflare_pages" {
         bail!("Cloudflare Pages Direct Upload 尚未实现；请先使用 S3/R2 目标。");
@@ -68,9 +69,12 @@ pub async fn publish_project(
     };
 
     let mut uploaded = 0usize;
-    if photos_dir.exists() {
-        for entry in std::fs::read_dir(photos_dir)
-            .with_context(|| format!("read photos dir {}", photos_dir.display()))?
+    for (dir, folder) in [(photos_dir, "photos"), (media_dir, "media")] {
+        if !dir.exists() {
+            continue;
+        }
+        for entry in std::fs::read_dir(dir)
+            .with_context(|| format!("read media dir {}", dir.display()))?
         {
             let entry = entry?;
             if !entry.file_type()?.is_file() {
@@ -78,7 +82,7 @@ pub async fn publish_project(
             }
             let name = entry.file_name().to_string_lossy().to_string();
             let bytes = std::fs::read(entry.path())?;
-            let key = format!("{base_key}/photos/{name}");
+            let key = format!("{base_key}/{folder}/{name}");
             put_object(&client, target, &key, &bytes, content_type(&name)).await?;
             uploaded += 1;
         }
@@ -237,6 +241,13 @@ fn content_type(name: &str) -> &'static str {
         "png" => "image/png",
         "webp" => "image/webp",
         "gif" => "image/gif",
+        "mp3" => "audio/mpeg",
+        "m4a" => "audio/mp4",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
         "html" => "text/html; charset=utf-8",
         "css" => "text/css; charset=utf-8",
         "js" => "application/javascript",

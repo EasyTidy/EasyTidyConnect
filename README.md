@@ -74,7 +74,9 @@ src/                   # React UI
   - 独立开机启动；
   - 仅手动；
 - 纪念日工作室：
-  - 项目编辑、5 套模板、照片、本地预览；
+  - 项目编辑、5 套贺卡模板、照片、音乐、视频、本地预览；
+  - 实时预览，切换模板立即更新；
+  - “打开新窗口”使用系统浏览器；
   - AI 文案（OpenAI 兼容 / Anthropic / Gemini）；
   - S3 / MinIO / Cloudflare R2 发布；
   - Cloudflare Pages Direct Upload；

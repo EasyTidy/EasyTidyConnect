@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   api,
   type AiProvider,
@@ -23,6 +24,8 @@ const EMPTY: ProjectInput = {
   closing: "",
   template_id: "minimal",
   theme: "#2563eb",
+  music: "",
+  video: "",
   custom_css: "",
 };
 
@@ -37,6 +40,8 @@ function toInput(project: AnniversaryProject): ProjectInput {
     closing: project.closing,
     template_id: project.template_id,
     theme: project.theme,
+    music: project.music,
+    video: project.video,
     custom_css: project.custom_css,
   };
 }
@@ -70,7 +75,11 @@ export default function StudioPage({
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
   const [showProviderForm, setShowProviderForm] = useState(false);
   const [showTargetForm, setShowTargetForm] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState("");
+  const [mediaBusy, setMediaBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const musicRef = useRef<HTMLInputElement | null>(null);
+  const videoRef = useRef<HTMLInputElement | null>(null);
 
   const load = async () => {
     try {
@@ -97,6 +106,24 @@ export default function StudioPage({
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const project: AnniversaryProject = {
+        id: selected?.id ?? 0,
+        slug: selected?.slug ?? "preview",
+        ...draft,
+        photos: selected?.photos ?? [],
+        created_at: selected?.created_at ?? "",
+        updated_at: selected?.updated_at ?? "",
+      };
+      api
+        .renderPreview(project)
+        .then(setPreviewHtml)
+        .catch(() => setPreviewHtml(""));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [draft, selected]);
 
   const selectProject = (project: AnniversaryProject) => {
     setSelected(project);
@@ -184,6 +211,34 @@ export default function StudioPage({
     setDraft(toInput(updated));
   };
 
+  const uploadMedia = async (kind: "music" | "video", file: File | undefined) => {
+    if (!selected || !file) return;
+    setMediaBusy(true);
+    try {
+      const base64 = await readBase64(file);
+      const updated = await api.addProjectMedia(selected.id, kind, file.name, base64);
+      setSelected(updated);
+      setDraft(toInput(updated));
+      notify(kind === "music" ? "音乐已添加" : "视频已添加");
+    } catch (error) {
+      notify(`媒体上传失败：${String(error)}`, true);
+    } finally {
+      setMediaBusy(false);
+      if (musicRef.current) musicRef.current.value = "";
+      if (videoRef.current) videoRef.current.value = "";
+    }
+  };
+
+  const removeMedia = async (kind: "music" | "video") => {
+    if (!selected) return;
+    await api.removeProjectMedia(selected.id, kind);
+    const updated = await api.project(selected.id);
+    if (updated) {
+      setSelected(updated);
+      setDraft(toInput(updated));
+    }
+  };
+
   const generate = async () => {
     if (!aiProviderId) {
       notify("请先添加 AI Provider", true);
@@ -207,8 +262,21 @@ export default function StudioPage({
     }
   };
 
-  const publish = async () => {
-    if (!selected) {
+  const openPreview = async () => {
+    const saved = selected ? await save() : null;
+    if (!saved || !status) {
+      notify("请先保存项目", true);
+      return;
+    }
+    const url = `http://127.0.0.1:${status.port}/a/${saved.slug}`;
+    try {
+      await openUrl(url);
+    } catch (error) {
+      notify(`打开新窗口失败：${String(error)}`, true);
+    }
+  };
+
+  const publish = async () => {    if (!selected) {
       notify("请先保存项目", true);
       return;
     }
@@ -379,6 +447,45 @@ export default function StudioPage({
             )}
           </div>
 
+          <div className="grid two" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <div className="field">
+              <label>背景音乐</label>
+              <input
+                ref={musicRef}
+                type="file"
+                accept="audio/*"
+                disabled={!selected || mediaBusy}
+                onChange={(event) => void uploadMedia("music", event.target.files?.[0])}
+              />
+              {draft.music && (
+                <div className="inline">
+                  <span className="muted">{draft.music}</span>
+                  <button className="btn small danger" onClick={() => void removeMedia("music")}>
+                    移除
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="field">
+              <label>视频</label>
+              <input
+                ref={videoRef}
+                type="file"
+                accept="video/*"
+                disabled={!selected || mediaBusy}
+                onChange={(event) => void uploadMedia("video", event.target.files?.[0])}
+              />
+              {draft.video && (
+                <div className="inline">
+                  <span className="muted">{draft.video}</span>
+                  <button className="btn small danger" onClick={() => void removeMedia("video")}>
+                    移除
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="field">
             <label>自定义 CSS（可选）</label>
             <textarea
@@ -411,13 +518,16 @@ export default function StudioPage({
           <div className="inline" style={{ justifyContent: "space-between" }}>
             <h2 style={{ margin: 0 }}>预览</h2>
             {previewUrl && (
-              <a href={previewUrl} target="_blank" rel="noreferrer" className="btn small">
-                新窗口
-              </a>
+              <button
+                className="btn small"
+                onClick={() => void openPreview()}
+              >
+                打开新窗口
+              </button>
             )}
           </div>
-          {previewUrl ? (
-            <iframe key={previewUrl} src={previewUrl} title="纪念日预览" />
+          {previewHtml ? (
+            <iframe key={draft.template_id} srcDoc={previewHtml} title="纪念日预览" />
           ) : (
             <div className="empty">保存后显示预览</div>
           )}

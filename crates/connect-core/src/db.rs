@@ -65,6 +65,8 @@ impl Database {
                 template_id TEXT NOT NULL DEFAULT 'minimal',
                 theme TEXT NOT NULL DEFAULT '#2563eb',
                 photos_json TEXT NOT NULL DEFAULT '[]',
+                music TEXT NOT NULL DEFAULT '',
+                video TEXT NOT NULL DEFAULT '',
                 custom_css TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -120,6 +122,8 @@ impl Database {
         let _ = conn.execute("ALTER TABLE publish_targets ADD COLUMN project_name TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE publish_targets ADD COLUMN api_token TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE publish_targets ADD COLUMN branch TEXT NOT NULL DEFAULT 'main'", []);
+        let _ = conn.execute("ALTER TABLE anniversary_projects ADD COLUMN music TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE anniversary_projects ADD COLUMN video TEXT NOT NULL DEFAULT ''", []);
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -368,7 +372,7 @@ impl Database {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
             "SELECT id, slug, name, event_date, title, recipient, opening, body, closing,
-                    template_id, theme, photos_json, custom_css, created_at, updated_at
+                    template_id, theme, photos_json, music, video, custom_css, created_at, updated_at
              FROM anniversary_projects ORDER BY id DESC",
         )?;
         let rows = stmt
@@ -381,7 +385,7 @@ impl Database {
         let conn = self.lock()?;
         conn.query_row(
             "SELECT id, slug, name, event_date, title, recipient, opening, body, closing,
-                    template_id, theme, photos_json, custom_css, created_at, updated_at
+                    template_id, theme, photos_json, music, video, custom_css, created_at, updated_at
              FROM anniversary_projects WHERE id=?1",
             params![id],
             map_project,
@@ -394,7 +398,7 @@ impl Database {
         let conn = self.lock()?;
         conn.query_row(
             "SELECT id, slug, name, event_date, title, recipient, opening, body, closing,
-                    template_id, theme, photos_json, custom_css, created_at, updated_at
+                    template_id, theme, photos_json, music, video, custom_css, created_at, updated_at
              FROM anniversary_projects WHERE slug=?1",
             params![slug],
             map_project,
@@ -410,8 +414,8 @@ impl Database {
         conn.execute(
             "INSERT INTO anniversary_projects
              (slug, name, event_date, title, recipient, opening, body, closing,
-              template_id, theme, photos_json, custom_css, created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'[]',?11,?12,?12)",
+              template_id, theme, photos_json, music, video, custom_css, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'[]',?11,?12,?13,?14,?14)",
             params![
                 slug,
                 input.name,
@@ -423,6 +427,8 @@ impl Database {
                 input.closing,
                 input.template_id,
                 input.theme,
+                input.music,
+                input.video,
                 input.custom_css,
                 now
             ],
@@ -437,8 +443,9 @@ impl Database {
         conn.execute(
             "UPDATE anniversary_projects SET
                 name=?1, event_date=?2, title=?3, recipient=?4, opening=?5, body=?6,
-                closing=?7, template_id=?8, theme=?9, custom_css=?10, updated_at=?11
-             WHERE id=?12",
+                closing=?7, template_id=?8, theme=?9, music=?10, video=?11,
+                custom_css=?12, updated_at=?13
+             WHERE id=?14",
             params![
                 input.name,
                 input.event_date,
@@ -449,6 +456,8 @@ impl Database {
                 input.closing,
                 input.template_id,
                 input.theme,
+                input.music,
+                input.video,
                 input.custom_css,
                 Utc::now().to_rfc3339(),
                 id
@@ -474,8 +483,23 @@ impl Database {
         Ok(())
     }
 
-    pub fn add_project_version(
-        &self,
+    pub fn set_project_media(&self, id: i64, kind: &str, value: &str) -> Result<()> {
+        let column = match kind {
+            "music" => "music",
+            "video" => "video",
+            _ => anyhow::bail!("未知媒体类型：{kind}"),
+        };
+        let conn = self.lock()?;
+        conn.execute(
+            &format!(
+                "UPDATE anniversary_projects SET {column}=?1, updated_at=?2 WHERE id=?3"
+            ),
+            params![value, Utc::now().to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn add_project_version(        &self,
         project_id: i64,
         published_url: &str,
     ) -> Result<ProjectVersion> {
@@ -705,9 +729,11 @@ fn map_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<AnniversaryProject> 
         template_id: row.get(9)?,
         theme: row.get(10)?,
         photos,
-        custom_css: row.get(12)?,
-        created_at: row.get(13)?,
-        updated_at: row.get(14)?,
+        music: row.get(12)?,
+        video: row.get(13)?,
+        custom_css: row.get(14)?,
+        created_at: row.get(15)?,
+        updated_at: row.get(16)?,
     })
 }
 

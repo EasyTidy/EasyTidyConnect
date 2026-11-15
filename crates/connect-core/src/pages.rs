@@ -31,6 +31,7 @@ pub async fn publish_project(
     project: &AnniversaryProject,
     html: &str,
     photos_dir: &Path,
+    media_dir: &Path,
 ) -> Result<PublishResult> {
     validate_target(target)?;
 
@@ -60,6 +61,24 @@ pub async fn publish_project(
             let bytes = std::fs::read(entry.path())?;
             assets.push(make_asset(
                 &format!("{base_path}/photos/{name}"),
+                &bytes,
+                content_type(&name),
+            ));
+        }
+    }
+
+    if media_dir.exists() {
+        for entry in std::fs::read_dir(media_dir)
+            .with_context(|| format!("read media dir {}", media_dir.display()))?
+        {
+            let entry = entry?;
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            let bytes = std::fs::read(entry.path())?;
+            assets.push(make_asset(
+                &format!("{base_path}/media/{name}"),
                 &bytes,
                 content_type(&name),
             ));
@@ -333,6 +352,13 @@ fn content_type(name: &str) -> &'static str {
         "png" => "image/png",
         "webp" => "image/webp",
         "gif" => "image/gif",
+        "mp3" => "audio/mpeg",
+        "m4a" => "audio/mp4",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
         "html" => "text/html; charset=utf-8",
         "css" => "text/css; charset=utf-8",
         "js" => "application/javascript",

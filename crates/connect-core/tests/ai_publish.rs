@@ -99,6 +99,8 @@ async fn s3_publish_uploads_html_and_photos_with_sigv4() {
         template_id: "minimal".to_string(),
         theme: "#2563eb".to_string(),
         photos: vec!["a.jpg".to_string()],
+        music: String::new(),
+        video: String::new(),
         custom_css: String::new(),
         created_at: String::new(),
         updated_at: String::new(),
@@ -125,8 +127,14 @@ async fn s3_publish_uploads_html_and_photos_with_sigv4() {
         created_at: String::new(),
     };
 
-    let html = connect_core::anniversary::render_project(&project, "photos/");
-    let result = connect_core::publish::publish_project(&target, &project, &html, &photos)
+    let html = connect_core::anniversary::render_project(&project, "photos/", "media/");
+    let result = connect_core::publish::publish_project(
+        &target,
+        &project,
+        &html,
+        &photos,
+        std::path::Path::new("/nonexistent"),
+    )
         .await
         .unwrap();
 

@@ -75,6 +75,8 @@ export type AnniversaryProject = {
   template_id: string;
   theme: string;
   photos: string[];
+  music: string;
+  video: string;
   custom_css: string;
   created_at: string;
   updated_at: string;
@@ -204,6 +206,12 @@ export const api = {
     invoke<AnniversaryProject>("add_project_photo", { projectId, fileName, dataBase64 }),
   removeProjectPhoto: (projectId: number, fileName: string) =>
     invoke<void>("remove_project_photo", { projectId, fileName }),
+  addProjectMedia: (projectId: number, kind: "music" | "video", fileName: string, dataBase64: string) =>
+    invoke<AnniversaryProject>("add_project_media", { projectId, kind, fileName, dataBase64 }),
+  removeProjectMedia: (projectId: number, kind: "music" | "video") =>
+    invoke<void>("remove_project_media", { projectId, kind }),
+  renderPreview: (project: AnniversaryProject) =>
+    invoke<string>("render_preview", { project }),
   projectVersions: (projectId: number) =>
     invoke<ProjectVersion[]>("list_project_versions", { projectId }),
   aiProviders: () => invoke<AiProvider[]>("list_ai_providers"),

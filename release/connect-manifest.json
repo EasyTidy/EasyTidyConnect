@@ -1,8 +1,8 @@
 {
-  "version": "0.6.0",
-  "file": "EasyTidy.Connect_0.6.0_x64-setup.exe",
-  "url": "https://github.com/EasyTidy/EasyTidyConnect/releases/download/connect-latest/EasyTidy.Connect_0.6.0_x64-setup.exe",
-  "size": 4251652,
-  "sha256": "9d7ea470b8916ef16bb94c35c9aa48c7bdead75a41dc0ac14d3bf2ee0dcc5c41",
+  "version": "0.7.0",
+  "file": "EasyTidy.Connect_0.7.0_x64-setup.exe",
+  "url": "https://github.com/EasyTidy/EasyTidyConnect/releases/download/connect-latest/EasyTidy.Connect_0.7.0_x64-setup.exe",
+  "size": 4351052,
+  "sha256": "9cd909d588fd936199253a9a86d32f82c9be9c3b09939631913bc7d3604d1495",
   "minEasyTidyVersion": "2.0.4"
 }

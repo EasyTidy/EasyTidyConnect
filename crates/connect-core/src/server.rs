@@ -89,6 +89,7 @@ pub async fn serve(
         .route("/w/{write_token}", get(write_helper))
         .route("/a/{slug}", get(anniversary_page))
         .route("/a/{slug}/photos/{file}", get(anniversary_photo))
+        .route("/a/{slug}/media/{file}", get(anniversary_media))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port))
@@ -130,6 +131,7 @@ pub async fn serve_public(
         .route("/health", get(public_health))
         .route("/a/{slug}", get(anniversary_page))
         .route("/a/{slug}/photos/{file}", get(anniversary_photo))
+        .route("/a/{slug}/media/{file}", get(anniversary_media))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
@@ -404,11 +406,16 @@ async fn execute_action(
                 .join("anniversaries")
                 .join(project.id.to_string())
                 .join("photos");
-            let html = render_project(&project, "photos/");
+            let media_dir = state
+                .data_dir
+                .join("anniversaries")
+                .join(project.id.to_string())
+                .join("media");
+            let html = render_project(&project, "photos/", "media/");
 
             if target.kind == "cloudflare_pages" {
                 let result =
-                    crate::pages::publish_project(&target, &project, &html, &photos_dir)
+                    crate::pages::publish_project(&target, &project, &html, &photos_dir, &media_dir)
                         .await
                         .map_err(|err| {
                             (StatusCode::BAD_GATEWAY, format!("Pages 发布失败：{err}"))
@@ -419,7 +426,7 @@ async fn execute_action(
                 ));
             }
 
-            let result = publish_project(&target, &project, &html, &photos_dir)
+            let result = publish_project(&target, &project, &html, &photos_dir, &media_dir)
                 .await
                 .map_err(|err| (StatusCode::BAD_GATEWAY, format!("发布失败：{err}")))?;
 
@@ -447,7 +454,8 @@ async fn anniversary_page(
         return result_page(StatusCode::NOT_FOUND, "未找到纪念日", "项目不存在或已删除。");
     };
     let photo_base = format!("/a/{}/photos/", project.slug);
-    Html(render_project(&project, &photo_base)).into_response()
+    let media_base = format!("/a/{}/media/", project.slug);
+    Html(render_project(&project, &photo_base, &media_base)).into_response()
 }
 
 async fn anniversary_photo(
@@ -487,6 +495,49 @@ async fn anniversary_photo(
         bytes,
     )
         .into_response()
+}
+
+async fn anniversary_media(
+    State(state): State<Arc<ServerState>>,
+    Path((slug, file)): Path<(String, String)>,
+) -> Response {
+    if file.contains('/') || file.contains('\\') || file.contains("..") {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let Ok(Some(project)) = state.db.get_project_by_slug(&slug) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let path = state
+        .data_dir
+        .join("anniversaries")
+        .join(project.id.to_string())
+        .join("media")
+        .join(&file);
+    let Ok(bytes) = tokio::fs::read(&path).await else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let content_type = match file
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "mp3" => "audio/mpeg",
+        "m4a" => "audio/mp4",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        _ => "application/octet-stream",
+    };
+    let mut response = ([(axum::http::header::CONTENT_TYPE, content_type)], bytes).into_response();
+    response.headers_mut().insert(
+        axum::http::header::ACCEPT_RANGES,
+        axum::http::HeaderValue::from_static("bytes"),
+    );
+    response
 }
 
 async fn write_helper(
