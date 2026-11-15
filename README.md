@@ -40,6 +40,13 @@ npm run tauri build
 
 产物在 `target/release/bundle/`。Windows 生成 NSIS/MSI；macOS/Linux 需在对应平台构建。
 
+发布资产放在 `EasyTidyConnect` 的 `connect-latest` release：
+
+- `connect-manifest.json`
+- `EasyTidy.Connect_0.3.1_x64-setup.exe`
+
+manifest 指向同 release 的安装包，EasyTidy 下载后校验大小与 SHA256。
+
 ## 目录
 
 ```text
@@ -62,8 +69,7 @@ src/                   # React UI
 - EasyTidy 本地 Bridge：
   - 从 EasyTidy 写入的 `connect-bridge.json` 自动导入地址/token；
   - 测试连接、读取任务/工作流列表；
-  - NFC 动作直接触发 EasyTidy 任务或工作流；
-- 三种启动模式（配置 Bridge 后）：
+  - NFC 动作直接触发 EasyTidy 任务或工作流；- 三种启动模式（配置 Bridge 后）：
   - 跟随 EasyTidy：EasyTidy「文件投递」页可一键启动，`--embedded --parent-pid`，父进程退出后自动退出；
   - 独立开机启动；
   - 仅手动；
