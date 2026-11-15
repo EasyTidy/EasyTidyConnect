@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use connect_core::bridge::{BridgeHealth, BridgeItem};
 use connect_core::db::Database;
 use connect_core::models::{RunView, Settings, TagPayload, TriggerView};
 use serde::Serialize;
@@ -119,18 +120,105 @@ fn save_settings(
     state: State<'_, AppState>,
     settings: Settings,
 ) -> Result<(), String> {
+    let effective_auto_start = match settings.integration_mode.as_deref() {
+        Some("follow") | Some("manual") => false,
+        Some("independent") => true,
+        _ => settings.auto_start,
+    };
+
+    let mut persisted = settings;
+    persisted.auto_start = effective_auto_start;
+
     state
         .db
-        .save_settings(&settings)
+        .save_settings(&persisted)
         .map_err(|err| err.to_string())?;
 
     let autolaunch = app.autolaunch();
-    let result = if settings.auto_start {
+    let result = if effective_auto_start {
         autolaunch.enable()
     } else {
         autolaunch.disable()
     };
     result.map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn test_bridge(bridge_url: String, bridge_token: String) -> Result<BridgeHealth, String> {
+    let client = connect_core::BridgeClient::new().map_err(|err| err.to_string())?;
+    client
+        .health(&bridge_url, &bridge_token)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn bridge_tasks(bridge_url: String, bridge_token: String) -> Result<Vec<BridgeItem>, String> {
+    let client = connect_core::BridgeClient::new().map_err(|err| err.to_string())?;
+    client
+        .tasks(&bridge_url, &bridge_token)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn bridge_workflows(
+    bridge_url: String,
+    bridge_token: String,
+) -> Result<Vec<BridgeItem>, String> {
+    let client = connect_core::BridgeClient::new().map_err(|err| err.to_string())?;
+    client
+        .workflows(&bridge_url, &bridge_token)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[derive(Serialize)]
+struct ImportedBridge {
+    app: String,
+    url: String,
+    token: String,
+    version: Option<String>,
+}
+
+#[tauri::command]
+fn import_bridge() -> Result<ImportedBridge, String> {
+    read_bridge_descriptor().ok_or_else(|| {
+        "未找到 EasyTidy 的 connect-bridge.json，请先启动 EasyTidyPro。".to_string()
+    })
+}
+
+fn read_bridge_descriptor() -> Option<ImportedBridge> {
+    let appdata = std::env::var("APPDATA").ok()?;
+    for app in ["EasyTidyPro", "EasyTidyProDev"] {
+        let path = PathBuf::from(&appdata).join(app).join("connect-bridge.json");
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        let (Some(url), Some(token)) = (
+            value.get("url").and_then(|item| item.as_str()),
+            value.get("token").and_then(|item| item.as_str()),
+        ) else {
+            continue;
+        };
+        return Some(ImportedBridge {
+            app: value
+                .get("app")
+                .and_then(|item| item.as_str())
+                .unwrap_or("EasyTidyPro")
+                .to_string(),
+            url: url.to_string(),
+            token: token.to_string(),
+            version: value
+                .get("version")
+                .and_then(|item| item.as_str())
+                .map(|item| item.to_string()),
+        });
+    }
+    None
 }
 
 fn show_main(app: &AppHandle) {
@@ -139,6 +227,62 @@ fn show_main(app: &AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+#[derive(Default)]
+struct LaunchArgs {
+    embedded: bool,
+    minimized: bool,
+    parent_pid: Option<u32>,
+    bridge_url: Option<String>,
+    bridge_token_file: Option<PathBuf>,
+}
+
+fn parse_launch_args() -> LaunchArgs {
+    let mut result = LaunchArgs::default();
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--embedded" => result.embedded = true,
+            "--minimized" => result.minimized = true,
+            "--parent-pid" => {
+                result.parent_pid = args.next().and_then(|value| value.parse().ok());
+            }
+            "--bridge-url" => result.bridge_url = args.next(),
+            "--bridge-token-file" => {
+                result.bridge_token_file = args.next().map(PathBuf::from);
+            }
+            _ => {}
+        }
+    }
+    result
+}
+
+fn read_and_remove_token(path: &PathBuf) -> Option<String> {
+    let token = std::fs::read_to_string(path).ok()?.trim().to_string();
+    let _ = std::fs::remove_file(path);
+    if token.is_empty() {
+        None
+    } else {
+        Some(token)
+    }
+}
+
+fn spawn_parent_monitor(app: AppHandle, parent_pid: u32) {
+    std::thread::spawn(move || {
+        use sysinfo::{Pid, System};
+        let pid = Pid::from(parent_pid as usize);
+        let mut system = System::new();
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            let alive = system.refresh_process(pid) && system.process(pid).is_some();
+            if !alive {
+                tracing::info!("parent EasyTidy exited, stopping embedded Connect");
+                app.exit(0);
+                break;
+            }
+        }
+    });
 }
 
 pub fn run() {
@@ -157,6 +301,7 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            let launch = parse_launch_args();
             let app_dir: PathBuf = app
                 .path()
                 .app_data_dir()
@@ -164,7 +309,34 @@ pub fn run() {
             std::fs::create_dir_all(&app_dir)?;
             let db_path = app_dir.join("connect.db");
             let db = Arc::new(Database::open(&db_path)?);
-            let settings = db.get_settings()?;
+            let mut settings = db.get_settings()?;
+
+            // EasyTidy 启动时可传入 Bridge 地址与一次性 token 文件，避免 token 出现在命令行。
+            let mut bridge_changed = false;
+            if let Some(url) = &launch.bridge_url {
+                settings.bridge_url = url.clone();
+                bridge_changed = true;
+            }
+            if let Some(path) = &launch.bridge_token_file {
+                if let Some(token) = read_and_remove_token(path) {
+                    settings.bridge_token = token;
+                    bridge_changed = true;
+                }
+            }
+
+            // 首次启动自动读取 EasyTidy 写的本机 Bridge 描述，省去手工复制 token。
+            if settings.bridge_url.is_empty() || settings.bridge_token.is_empty() {
+                if let Some(imported) = read_bridge_descriptor() {
+                    settings.bridge_url = imported.url;
+                    settings.bridge_token = imported.token;
+                    bridge_changed = true;
+                }
+            }
+
+            if bridge_changed {
+                db.save_settings(&settings)?;
+            }
+
             let port = settings.port;
 
             // 同步数据库里的开机启动设置与系统实际状态。
@@ -220,10 +392,14 @@ pub fn run() {
 
             app.manage(tray);
 
-            if std::env::args().any(|arg| arg == "--minimized") {
+            if launch.embedded || launch.minimized {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
                 }
+            }
+
+            if let Some(parent_pid) = launch.parent_pid {
+                spawn_parent_monitor(app.handle().clone(), parent_pid);
             }
 
             Ok(())
@@ -239,7 +415,11 @@ pub fn run() {
             mark_tag_written,
             list_runs,
             get_settings,
-            save_settings
+            save_settings,
+            test_bridge,
+            bridge_tasks,
+            bridge_workflows,
+            import_bridge
         ])
         .run(tauri::generate_context!())
         .expect("error while running EasyTidy Connect");

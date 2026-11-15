@@ -43,6 +43,15 @@ pub struct Settings {
     pub device_name: String,
     pub port: u16,
     pub auto_start: bool,
+    /// EasyTidy Bridge base URL, e.g. http://127.0.0.1:53401
+    #[serde(default)]
+    pub bridge_url: String,
+    /// EasyTidy Bridge Bearer token.
+    #[serde(default)]
+    pub bridge_token: String,
+    /// follow | independent | manual; None when EasyTidy integration is unavailable.
+    #[serde(default)]
+    pub integration_mode: Option<String>,
 }
 
 impl Default for Settings {
@@ -51,6 +60,9 @@ impl Default for Settings {
             device_name: "EasyTidy Connect".to_string(),
             port: 53400,
             auto_start: false,
+            bridge_url: String::new(),
+            bridge_token: String::new(),
+            integration_mode: None,
         }
     }
 }

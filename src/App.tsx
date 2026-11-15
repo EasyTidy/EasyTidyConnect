@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { api, type Run, type Settings, type Status, type TagPayload, type Trigger } from "./api";
+import { api, type BridgeItem, type Run, type Settings, type Status, type TagPayload, type Trigger } from "./api";
 
 type Page = "dashboard" | "triggers" | "tags" | "runs" | "settings";
 
@@ -16,6 +16,8 @@ const ACTION_LABELS: Record<string, string> = {
   message: "测试消息",
   webhook: "调用 Webhook",
   open_url: "打开网页",
+  easytidy_task: "运行 EasyTidy 任务",
+  easytidy_workflow: "运行 EasyTidy 工作流",
   easytidy: "运行 EasyTidy",
 };
 
@@ -23,7 +25,8 @@ const ACTION_OPTIONS = [
   { value: "message", label: "测试消息（验证标签是否可用）" },
   { value: "webhook", label: "调用 Webhook" },
   { value: "open_url", label: "打开网页" },
-  { value: "easytidy", label: "运行 EasyTidy（需集成）" },
+  { value: "easytidy_task", label: "运行 EasyTidy 任务（需 Bridge）" },
+  { value: "easytidy_workflow", label: "运行 EasyTidy 工作流（需 Bridge）" },
 ];
 
 function formatTime(value?: string | null) {
@@ -42,6 +45,15 @@ function actionSummary(trigger: Trigger) {
       // ignore
     }
   }
+  if (trigger.action_type === "easytidy_task" || trigger.action_type === "easytidy_workflow") {
+    try {
+      const parsed = JSON.parse(trigger.action_config || "{}");
+      if (parsed.name) return `${ACTION_LABELS[trigger.action_type]} · ${parsed.name}`;
+      if (parsed.id) return `${ACTION_LABELS[trigger.action_type]} · #${parsed.id}`;
+    } catch {
+      // ignore
+    }
+  }
   return ACTION_LABELS[trigger.action_type] ?? trigger.action_type;
 }
 
@@ -56,7 +68,14 @@ export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [triggers, setTriggers] = useState<Trigger[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
-  const [settings, setSettings] = useState<Settings>({ device_name: "", port: 53400, auto_start: false });
+  const [settings, setSettings] = useState<Settings>({
+    device_name: "",
+    port: 53400,
+    auto_start: false,
+    bridge_url: "",
+    bridge_token: "",
+    integration_mode: null,
+  });
   const [editing, setEditing] = useState<Trigger | "new" | null>(null);
   const [selectedTag, setSelectedTag] = useState<number | null>(null);
   const [payload, setPayload] = useState<TagPayload | null>(null);
@@ -194,9 +213,13 @@ export default function App() {
             settings={settings}
             status={status}
             onSave={async (next) => {
-              await api.saveSettings(next);
-              setSettings(next);
-              notify("设置已保存；修改端口后需要重启应用生效");
+              try {
+                await api.saveSettings(next);
+                setSettings(next);
+                notify("设置已保存；修改端口后需要重启应用生效");
+              } catch (error) {
+                notify(`保存设置失败：${String(error)}`, true);
+              }
             }}
           />
         )}
@@ -593,14 +616,65 @@ function SettingsPage(props: {
   onSave: (settings: Settings) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<Settings>(props.settings);
-  useEffect(() => setDraft(props.settings), [props.settings]);
+  const [mode, setMode] = useState<"follow" | "independent" | "manual">(
+    props.settings.integration_mode ?? "manual",
+  );
+  const [bridgeTest, setBridgeTest] = useState<string>("");
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    setDraft(props.settings);
+    setMode(props.settings.integration_mode ?? "manual");
+  }, [props.settings]);
+
+  const hasBridge = Boolean(draft.bridge_url.trim() && draft.bridge_token.trim());
+
+  const testBridge = async () => {
+    setTesting(true);
+    try {
+      const health = await api.testBridge(draft.bridge_url.trim(), draft.bridge_token.trim());
+      setBridgeTest(`已连接 ${health.app} ${health.version}（Bridge API v${health.bridgeApiVersion}）`);
+    } catch (error) {
+      setBridgeTest(`连接失败：${String(error)}`);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const importBridge = async () => {
+    try {
+      const imported = await api.importBridge();
+      setDraft((current) => ({
+        ...current,
+        bridge_url: imported.url,
+        bridge_token: imported.token,
+      }));
+      setBridgeTest(`已从 ${imported.app} 导入；点击“测试连接”验证。`);
+    } catch (error) {
+      setBridgeTest(String(error));
+    }
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const next: Settings = {
+        ...draft,
+        auto_start: hasBridge ? mode === "independent" : draft.auto_start,
+        integration_mode: hasBridge ? mode : null,
+      };
+      await props.onSave(next);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <>
       <header className="page-head">
         <div>
           <h1>设置</h1>
-          <p>服务、启动与设备信息。当前为 M0 本地版。</p>
+          <p>服务、EasyTidy Bridge 与启动方式。</p>
         </div>
       </header>
       <div className="grid two">
@@ -622,20 +696,91 @@ function SettingsPage(props: {
             />
             <span className="muted">修改端口后需要重启应用；当前版本不会热切换监听端口。</span>
           </div>
-          <label className="inline" style={{ marginBottom: 16 }}>
+
+          <h3 style={{ marginTop: 22 }}>EasyTidy Bridge</h3>
+          <div className="field">
+            <label>Bridge 地址</label>
             <input
-              type="checkbox"
-              checked={draft.auto_start}
-              onChange={(event) => setDraft({ ...draft, auto_start: event.target.checked })}
+              value={draft.bridge_url}
+              placeholder="http://127.0.0.1:53401"
+              onChange={(event) => setDraft({ ...draft, bridge_url: event.target.value })}
             />
-            <span style={{ fontSize: 13 }}>开机启动</span>
-          </label>
-          <div className="tip">
-            独立版只有一个“开机启动”开关。与 EasyTidy 集成后的三种启动模式在后续版本接入。
           </div>
+          <div className="field">
+            <label>Bridge Token</label>
+            <input
+              type="password"
+              value={draft.bridge_token}
+              placeholder="在 EasyTidy 的 Connect 设置中获取"
+              onChange={(event) => setDraft({ ...draft, bridge_token: event.target.value })}
+            />
+          </div>
+          <div className="inline" style={{ marginBottom: 12 }}>
+            <button className="btn small" onClick={() => void testBridge()} disabled={testing || !hasBridge}>
+              {testing ? "测试中..." : "测试连接"}
+            </button>
+            <button className="btn small" onClick={() => void importBridge()}>
+              从 EasyTidy 导入
+            </button>
+            {bridgeTest && <span className="muted">{bridgeTest}</span>}
+          </div>
+
+          <h3 style={{ marginTop: 22 }}>启动方式</h3>
+          {hasBridge ? (
+            <div className="list">
+              <label className="inline" style={{ alignItems: "flex-start" }}>
+                <input
+                  type="radio"
+                  checked={mode === "follow"}
+                  onChange={() => setMode("follow")}
+                />
+                <span>
+                  <strong>跟随 EasyTidy</strong>
+                  <div className="muted">EasyTidy 启动时拉起 Connect；EasyTidy 退出后自动退出。</div>
+                </span>
+              </label>
+              <label className="inline" style={{ alignItems: "flex-start" }}>
+                <input
+                  type="radio"
+                  checked={mode === "independent"}
+                  onChange={() => setMode("independent")}
+                />
+                <span>
+                  <strong>独立开机启动</strong>
+                  <div className="muted">登录后自动启动，EasyTidy 未运行也保持托盘服务。</div>
+                </span>
+              </label>
+              <label className="inline" style={{ alignItems: "flex-start" }}>
+                <input
+                  type="radio"
+                  checked={mode === "manual"}
+                  onChange={() => setMode("manual")}
+                />
+                <span>
+                  <strong>仅手动</strong>
+                  <div className="muted">不写系统自启；由用户或 EasyTidy 显式启动。</div>
+                </span>
+              </label>
+            </div>
+          ) : (
+            <>
+              <label className="inline" style={{ marginBottom: 10 }}>
+                <input
+                  type="checkbox"
+                  checked={draft.auto_start}
+                  onChange={(event) => setDraft({ ...draft, auto_start: event.target.checked })}
+                />
+                <span style={{ fontSize: 13 }}>开机启动</span>
+              </label>
+              <div className="tip">
+                还没配置 EasyTidy Bridge，所以这里只有“开机启动”开关。配置 Bridge 后会出现三种启动模式。
+              </div>
+            </>
+          )}
+
           <div className="modal-actions">
-            <button className="btn primary" onClick={() => void props.onSave(draft)}>
-              保存设置
+            <button className="btn primary" onClick={() => void save()} disabled={saving}>
+              {saving ? "保存中..." : "保存设置"}
             </button>
           </div>
         </section>
@@ -663,14 +808,13 @@ function SettingsPage(props: {
                 <td>本地 SQLite</td>
               </tr>
               <tr>
-                <td>EasyTidy 集成</td>
-                <td>未接入（后续）</td>
+                <td>EasyTidy Bridge</td>
+                <td>{hasBridge ? "已配置" : "未配置"}</td>
               </tr>
             </tbody>
           </table>
           <div className="tip" style={{ marginTop: 14 }}>
-            M0 范围：触发器、NFC 写入数据、局域网触发、运行历史。AI、发布、EasyTidy
-            桥接将在后续迭代加入。
+            当前版本支持 EasyTidy 任务/工作流触发与三种启动模式；AI、发布、桌面读卡器在后续迭代加入。
           </div>
         </section>
       </div>
@@ -685,21 +829,61 @@ function TriggerDialog(props: {
   onError: (message: string) => void;
 }) {
   const initialConfig = useMemo(() => {
-    if (!props.trigger) return "";
+    if (!props.trigger) return { url: "", id: "", name: "" };
     try {
       const parsed = JSON.parse(props.trigger.action_config || "{}");
-      return parsed.url ?? "";
+      return {
+        url: parsed.url ?? "",
+        id: parsed.id != null ? String(parsed.id) : "",
+        name: parsed.name ?? "",
+      };
     } catch {
-      return "";
+      return { url: "", id: "", name: "" };
     }
   }, [props.trigger]);
 
   const [name, setName] = useState(props.trigger?.name ?? "");
   const [actionType, setActionType] = useState(props.trigger?.action_type ?? "message");
-  const [url, setUrl] = useState(initialConfig);
+  const [url, setUrl] = useState(initialConfig.url);
+  const [targetId, setTargetId] = useState(initialConfig.id);
+  const [targets, setTargets] = useState<BridgeItem[]>([]);
+  const [targetError, setTargetError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const needsUrl = actionType === "webhook" || actionType === "open_url";
+  const needsEasyTidy =
+    actionType === "easytidy_task" || actionType === "easytidy_workflow";
+
+  useEffect(() => {
+    if (!needsEasyTidy) return;
+    let cancelled = false;
+    setTargetError("");
+    setTargets([]);
+
+    api
+      .settings()
+      .then(async (settings) => {
+        if (!settings.bridge_url.trim() || !settings.bridge_token.trim()) {
+          setTargetError("请先在设置中配置 EasyTidy Bridge 地址与 token。");
+          return;
+        }
+        const list =
+          actionType === "easytidy_task"
+            ? await api.bridgeTasks(settings.bridge_url, settings.bridge_token)
+            : await api.bridgeWorkflows(settings.bridge_url, settings.bridge_token);
+        if (!cancelled) {
+          setTargets(list);
+          setTargetId((current) => current || (list[0]?.id != null ? String(list[0].id) : ""));
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) setTargetError(`无法读取 EasyTidy 列表：${String(error)}`);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [actionType, needsEasyTidy]);
 
   const save = async () => {
     if (!name.trim()) {
@@ -710,9 +894,21 @@ function TriggerDialog(props: {
       props.onError("请填写 URL");
       return;
     }
+    if (needsEasyTidy && !targetId) {
+      props.onError("请选择 EasyTidy 任务或工作流");
+      return;
+    }
     setBusy(true);
     try {
-      const config = needsUrl ? JSON.stringify({ url: url.trim() }) : "{}";
+      const selected = targets.find((item) => String(item.id) === targetId);
+      const config = needsUrl
+        ? JSON.stringify({ url: url.trim() })
+        : needsEasyTidy
+          ? JSON.stringify({
+              id: Number(targetId),
+              name: selected?.name ?? initialConfig.name,
+            })
+          : "{}";
       if (props.trigger) {
         await api.updateTrigger(
           props.trigger.id,
@@ -766,8 +962,29 @@ function TriggerDialog(props: {
             />
           </div>
         )}
+        {needsEasyTidy && (
+          <div className="field">
+            <label>
+              {actionType === "easytidy_task" ? "EasyTidy 任务" : "EasyTidy 工作流"}
+            </label>
+            {targetError ? (
+              <div className="tip">{targetError}</div>
+            ) : (
+              <select value={targetId} onChange={(event) => setTargetId(event.target.value)}>
+                <option value="" disabled>
+                  {targets.length === 0 ? "正在读取..." : "请选择"}
+                </option>
+                {targets.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} (#{item.id})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
         {actionType === "easytidy" && (
-          <div className="tip">EasyTidy 集成尚未接入；当前保存后触发会返回“未连接”。</div>
+          <div className="tip">请选择“运行 EasyTidy 任务”或“运行 EasyTidy 工作流”。</div>
         )}
         <div className="modal-actions">
           <button className="btn" onClick={props.onClose} disabled={busy}>

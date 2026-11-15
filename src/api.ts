@@ -37,6 +37,28 @@ export type Settings = {
   device_name: string;
   port: number;
   auto_start: boolean;
+  bridge_url: string;
+  bridge_token: string;
+  integration_mode: "follow" | "independent" | "manual" | null;
+};
+
+export type BridgeHealth = {
+  app: string;
+  version: string;
+  bridgeApiVersion: number;
+};
+
+export type BridgeItem = {
+  id: number;
+  name: string;
+  enabled: boolean;
+};
+
+export type ImportedBridge = {
+  app: string;
+  url: string;
+  token: string;
+  version: string | null;
 };
 
 export type Status = {
@@ -68,4 +90,11 @@ export const api = {
   runs: (limit = 50) => invoke<Run[]>("list_runs", { limit }),
   settings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
+  testBridge: (bridgeUrl: string, bridgeToken: string) =>
+    invoke<BridgeHealth>("test_bridge", { bridgeUrl, bridgeToken }),
+  bridgeTasks: (bridgeUrl: string, bridgeToken: string) =>
+    invoke<BridgeItem[]>("bridge_tasks", { bridgeUrl, bridgeToken }),
+  bridgeWorkflows: (bridgeUrl: string, bridgeToken: string) =>
+    invoke<BridgeItem[]>("bridge_workflows", { bridgeUrl, bridgeToken }),
+  importBridge: () => invoke<ImportedBridge>("import_bridge"),
 };

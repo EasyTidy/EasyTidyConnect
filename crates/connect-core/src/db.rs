@@ -254,11 +254,18 @@ impl Database {
         let auto_start = get_setting(&conn, "auto_start")?
             .map(|value| value == "1")
             .unwrap_or(false);
+        let bridge_url = get_setting(&conn, "bridge_url")?.unwrap_or_default();
+        let bridge_token = get_setting(&conn, "bridge_token")?.unwrap_or_default();
+        let integration_mode = get_setting(&conn, "integration_mode")?
+            .filter(|value| !value.is_empty());
 
         Ok(Settings {
             device_name,
             port,
             auto_start,
+            bridge_url,
+            bridge_token,
+            integration_mode,
         })
     }
 
@@ -267,6 +274,13 @@ impl Database {
         set_setting(&conn, "device_name", &settings.device_name)?;
         set_setting(&conn, "port", &settings.port.to_string())?;
         set_setting(&conn, "auto_start", if settings.auto_start { "1" } else { "0" })?;
+        set_setting(&conn, "bridge_url", &settings.bridge_url)?;
+        set_setting(&conn, "bridge_token", &settings.bridge_token)?;
+        set_setting(
+            &conn,
+            "integration_mode",
+            settings.integration_mode.as_deref().unwrap_or(""),
+        )?;
         Ok(())
     }
 }

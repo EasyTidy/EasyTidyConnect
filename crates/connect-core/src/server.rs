@@ -14,8 +14,9 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::bridge::BridgeClient;
 use crate::db::Database;
-use crate::models::TagPayload;
+use crate::models::{Settings, TagPayload};
 
 pub fn local_ip() -> String {
     UdpSocket::bind("0.0.0.0:0")
@@ -118,7 +119,15 @@ async fn trigger(
         }
     };
 
-    let result = execute_action(&state, &row.action_type, &row.action_config).await;
+    let settings = match state.db.get_settings() {
+        Ok(settings) => settings,
+        Err(err) => {
+            let _ = state.db.finish_run(run_id, "failed", Some(&err.to_string()));
+            return result_page(StatusCode::INTERNAL_SERVER_ERROR, "执行失败", &err.to_string());
+        }
+    };
+
+    let result = execute_action(&state, &row.action_type, &row.action_config, &settings).await;
 
     match result {
         Ok((status, message)) => {
@@ -137,6 +146,7 @@ async fn execute_action(
     state: &ServerState,
     action_type: &str,
     action_config: &str,
+    settings: &Settings,
 ) -> Result<(StatusCode, String), (StatusCode, String)> {
     match action_type {
         "webhook" => {
@@ -175,9 +185,60 @@ async fn execute_action(
                 .ok_or((StatusCode::BAD_REQUEST, "缺少 url".to_string()))?;
             Ok((StatusCode::OK, format!("请打开：{url}")))
         }
+        "easytidy_task" | "easytidy_workflow" => {
+            let config: serde_json::Value = serde_json::from_str(action_config)
+                .map_err(|err| (StatusCode::BAD_REQUEST, format!("EasyTidy 配置 JSON 无效：{err}")))?;
+            let target_id = config
+                .get("id")
+                .and_then(|value| value.as_i64())
+                .ok_or((StatusCode::BAD_REQUEST, "EasyTidy 动作缺少任务/工作流 id".to_string()))?;
+            let name = config
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or("未命名");
+
+            if settings.bridge_url.trim().is_empty() || settings.bridge_token.trim().is_empty() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "尚未配置 EasyTidy Bridge。请在设置中填写 Bridge 地址和 token。".to_string(),
+                ));
+            }
+
+            let client = BridgeClient::new()
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+
+            let accepted = if action_type == "easytidy_task" {
+                client
+                    .run_task(&settings.bridge_url, &settings.bridge_token, target_id)
+                    .await
+            } else {
+                client
+                    .run_workflow(&settings.bridge_url, &settings.bridge_token, target_id)
+                    .await
+            }
+            .map_err(|err| {
+                (
+                    StatusCode::BAD_GATEWAY,
+                    format!("调用 EasyTidy Bridge 失败：{err}"),
+                )
+            })?;
+
+            let kind = if action_type == "easytidy_task" {
+                "任务"
+            } else {
+                "工作流"
+            };
+            Ok((
+                StatusCode::OK,
+                format!(
+                    "已提交 EasyTidy {kind}「{name}」，运行 ID {}。",
+                    accepted.run_id
+                ),
+            ))
+        }
         "easytidy" => Err((
-            StatusCode::NOT_IMPLEMENTED,
-            "尚未连接 EasyTidy。请在 EasyTidy 中启用 Connect 集成后再使用。".to_string(),
+            StatusCode::BAD_REQUEST,
+            "请把动作改为「EasyTidy 任务」或「EasyTidy 工作流」并选择目标。".to_string(),
         )),
         _ => Ok((
             StatusCode::OK,
