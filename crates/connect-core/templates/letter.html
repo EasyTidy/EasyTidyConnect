@@ -15,8 +15,14 @@ body{margin:0;min-height:100vh;padding:42px 16px;background:radial-gradient(circ
 h1{font-size:34px;font-weight:500;margin:20px 0 6px}
 .to{color:#8c7b68;margin-bottom:30px;font-size:14px}
 p{font-size:15px;line-height:32px;margin:0;text-align:justify}
-.photos{display:flex;flex-wrap:wrap;gap:14px;margin:26px 0}
-.photos img{width:calc(50% - 7px);height:200px;object-fit:cover;padding:7px;background:#fff;border:1px solid #e5d8c6;box-shadow:0 8px 20px rgba(0,0,0,.1)}
+.photos{margin:28px 0}
+.photos{columns:2;column-gap:14px}
+.photos:empty{display:none}
+.photos:has(img:only-child){columns:1}
+.photos img{display:block;width:100%;height:auto;margin:0 0 14px;break-inside:avoid;padding:7px;background:#fff;border:1px solid #e5d8c6;box-shadow:0 8px 20px rgba(0,0,0,.1)}
+.photos:has(img:only-child) img{width:auto;max-width:100%;max-height:78vh;margin:0 auto}
+.photos img:nth-child(odd){transform:rotate(-1deg)}
+.photos img:nth-child(even){transform:rotate(1.2deg)}
 .sign{margin-top:44px;text-align:right;font-size:17px;color:#5c4d3e;font-style:italic}
 .sign:after{content:"";display:block;width:90px;height:1px;background:var(--accent);margin:12px 0 0 auto;opacity:.5}
 {{custom_css}}

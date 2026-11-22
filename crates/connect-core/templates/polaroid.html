@@ -2,25 +2,43 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>{{title}}</title>
 <style>
 :root{--accent:{{theme}}}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;padding:54px 16px;background:#e9e1d4;background-image:radial-gradient(rgba(255,255,255,.5) 1px,transparent 1px);background-size:6px 6px;font-family:"Kaiti SC","STKaiti","KaiTi",serif;color:#3a3128}
-.board{max-width:980px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:26px;align-items:start}
-.note{position:relative;background:#fffdf8;padding:34px 28px 58px;box-shadow:0 16px 36px rgba(60,40,20,.18);transform:rotate(-1.6deg)}
-.note:nth-child(2n){transform:rotate(1.8deg)}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;padding:54px 16px 70px;background:#e9e1d4;background-image:radial-gradient(rgba(255,255,255,.5) 1px,transparent 1px);background-size:6px 6px;font-family:"Kaiti SC","STKaiti","KaiTi",serif;color:#3a3128;overflow-x:hidden}
+.board{max-width:640px;margin:0 auto}
+.note{position:relative;background:#fffdf8;padding:34px 28px 40px;box-shadow:0 16px 36px rgba(60,40,20,.18);transform:rotate(-1.2deg)}
 .note:before{content:"";position:absolute;top:-12px;left:50%;width:92px;height:24px;transform:translateX(-50%) rotate(-3deg);background:rgba(214,190,160,.55);box-shadow:0 2px 4px rgba(0,0,0,.06)}
 .pin{width:38px;height:38px;border-radius:50%;background:var(--accent);opacity:.85;margin:0 auto 18px;box-shadow:inset 0 -5px 10px rgba(0,0,0,.18),0 4px 8px rgba(0,0,0,.15)}
 .date{display:block;text-align:center;color:#9a8b78;font-size:12px;letter-spacing:.24em}
 h1{font-size:30px;font-weight:500;text-align:center;margin:14px 0 8px;line-height:1.35}
 .to{text-align:center;color:#a0907d;font-size:13px;margin-bottom:22px}
 p{font-size:16px;line-height:2;margin:0 0 14px}
-.photos{display:flex;flex-wrap:wrap;gap:16px;justify-content:center;margin:24px 0}
-.photos img{width:calc(50% - 12px);min-width:140px;height:210px;object-fit:cover;background:#eee;padding:10px 10px 34px;background:#fff;box-shadow:0 8px 18px rgba(0,0,0,.14);transform:rotate(-2deg)}
-.photos img:nth-child(2n){transform:rotate(2.4deg)}
 .sign{text-align:right;font-size:20px;color:var(--accent);margin-top:26px}
+
+/* 照片：凌乱堆叠的拍立得，左右滑动翻看；相纸跟随照片本身的比例 */
+.stack-wrap{margin:46px auto 10px;max-width:520px}
+.stack-wrap:has(.stack:empty){display:none}
+.stack{position:relative;height:min(118vw,560px);touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.stack img{position:absolute;left:50%;top:50%;display:block;width:auto;height:auto;max-width:84%;max-height:88%;padding:12px 12px 46px;background:#fff;box-shadow:0 14px 30px -10px rgba(50,35,20,.45),0 1px 3px rgba(0,0,0,.12);border-radius:2px;
+  transform:translate(calc(-50% + var(--dx,0px)),calc(-50% + var(--dy,0px))) rotate(var(--r,0deg));transition:transform .45s cubic-bezier(.2,.8,.2,1),opacity .3s ease;cursor:grab;-webkit-user-drag:none}
+.stack img:nth-child(4n+1){--r:-6deg;--dx:-10px;--dy:6px}
+.stack img:nth-child(4n+2){--r:5deg;--dx:12px;--dy:-4px}
+.stack img:nth-child(4n+3){--r:-2deg;--dx:-4px;--dy:-10px}
+.stack img:nth-child(4n){--r:8deg;--dx:8px;--dy:10px}
+.stack img.dragging{transition:none;cursor:grabbing}
+.stack img.fly{opacity:0}
+/* 只有一张时摆正 */
+.stack img:only-child{--r:-1.5deg;--dx:0px;--dy:0px}
+.stack-bar{display:flex;align-items:center;justify-content:center;gap:18px;margin-top:6px;font-size:14px;color:#8a7a66}
+.stack-bar button{width:38px;height:38px;border:0;border-radius:50%;background:#fffdf8;color:#5c4a38;font-size:18px;box-shadow:0 4px 12px rgba(60,40,20,.15);cursor:pointer}
+.stack-bar button:active{transform:scale(.94)}
+.stack-hint{margin-top:6px;text-align:center;font-size:12px;color:#a39480;letter-spacing:.1em}
+.stack-wrap.single .stack-bar,.stack-wrap.single .stack-hint{display:none}
+@media (prefers-reduced-motion:reduce){.stack img{transition:none}}
 {{custom_css}}
 </style>
 </head>
@@ -33,11 +51,95 @@ p{font-size:16px;line-height:2;margin:0 0 14px}
     <div class="to">写给 {{recipient}}</div>
     <p>{{opening}}</p>
     {{body}}
-    <div class="photos">{{photos}}</div>
     {{media}}
     <p>{{closing}}</p>
     <div class="sign">{{recipient}}</div>
   </article>
+  <section class="stack-wrap" aria-label="照片">
+    <div class="stack">{{photos}}</div>
+    <div class="stack-bar"><button type="button" data-step="-1" aria-label="上一张">‹</button><span class="stack-count"></span><button type="button" data-step="1" aria-label="下一张">›</button></div>
+    <div class="stack-hint">← 左右滑动翻看照片 →</div>
+  </section>
 </div>
+<script>
+(function () {
+  var stack = document.querySelector(".stack");
+  if (!stack) return;
+  var wrap = stack.parentNode, count = wrap.querySelector(".stack-count");
+  var cards = [].slice.call(stack.querySelectorAll("img"));
+  cards.forEach(function (img) { img.loading = "eager"; });
+  var total = cards.length, current = 0;
+  if (total < 2) { wrap.classList.add("single"); return; }
+  // 每张照片一个随机角度和位移，看起来像随手堆在桌上
+  cards.forEach(function (img) {
+    img.style.setProperty("--r", (Math.random() * 16 - 8).toFixed(1) + "deg");
+    img.style.setProperty("--dx", Math.round(Math.random() * 28 - 14) + "px");
+    img.style.setProperty("--dy", Math.round(Math.random() * 20 - 10) + "px");
+    img.draggable = false;
+  });
+  // DOM 顺序：最后一个在最上面。初始让第一张在最上面
+  cards.slice().reverse().forEach(function (img) { stack.appendChild(img); });
+  function top() { return stack.lastElementChild; }
+  function update() { count.textContent = (current + 1) + " / " + total; }
+  // direction 1：最上面一张飞走（向 fly 方向）放到最底下；-1：把最底下一张抽回最上面
+  function next(direction, fly) {
+    var card = top();
+    fly = fly || 1;
+    if (direction > 0) {
+      card.style.transform = "translate(calc(-50% + " + (fly * window.innerWidth) + "px),-50%) rotate(" + (fly * 24) + "deg)";
+      card.classList.add("fly");
+      setTimeout(function () {
+        card.classList.remove("fly");
+        card.style.transform = "";
+        stack.insertBefore(card, stack.firstElementChild);
+      }, 320);
+      current = (current + 1) % total;
+    } else {
+      // 从最底下抽一张放回最上面
+      var bottom = stack.firstElementChild;
+      bottom.classList.add("fly");
+      stack.appendChild(bottom);
+      requestAnimationFrame(function () { bottom.classList.remove("fly"); });
+      current = (current - 1 + total) % total;
+    }
+    update();
+  }
+  wrap.querySelectorAll("button").forEach(function (button) {
+    button.addEventListener("click", function () { next(+button.getAttribute("data-step")); });
+  });
+  // 拖动最上面的照片：横向滑动超过阈值就翻页，否则弹回
+  var startX = 0, startY = 0, dx = 0, dragging = null;
+  stack.addEventListener("pointerdown", function (event) {
+    if (event.target !== top()) return;
+    dragging = event.target; startX = event.clientX; startY = event.clientY; dx = 0;
+    dragging.dataset.dragged = "";
+    dragging.classList.add("dragging");
+    dragging.setPointerCapture(event.pointerId);
+  });
+  stack.addEventListener("pointermove", function (event) {
+    if (!dragging) return;
+    dx = event.clientX - startX;
+    if (Math.abs(dx) > 6) dragging.dataset.dragged = "1";
+    var dy = (event.clientY - startY) * 0.3;
+    dragging.style.transform = "translate(calc(-50% + " + dx + "px),calc(-50% + " + dy + "px)) rotate(" + (dx / 18) + "deg)";
+  });
+  function release() {
+    if (!dragging) return;
+    var card = dragging; dragging = null;
+    card.classList.remove("dragging");
+    if (dx < -70) next(1, -1);
+    else if (dx > 70) { card.style.transform = ""; next(-1); }
+    else card.style.transform = "";
+  }
+  stack.addEventListener("pointerup", release);
+  stack.addEventListener("pointercancel", release);
+  document.addEventListener("keydown", function (event) {
+    if (document.documentElement.classList.contains("et-lb-lock")) return;
+    if (event.key === "ArrowRight") next(1);
+    if (event.key === "ArrowLeft") next(-1);
+  });
+  update();
+})();
+</script>
 </body>
 </html>

@@ -83,6 +83,8 @@ fn anniversary_project_and_render() {
         music: String::new(),
         video: String::new(),
         custom_css: String::new(),
+        photo_focus: Default::default(),
+        slideshow: false,
     };
 
     let project = db.create_project(&input).unwrap();
@@ -96,7 +98,29 @@ fn anniversary_project_and_render() {
     assert!(html.contains("#6ea8ff"));
     assert!(html.contains("第一段"));
 
-    let version = db.add_project_version(project.id, "https://example.com/a").unwrap();
+    // 裁剪焦点随项目保存
+    let mut input = connect_core::ProjectInput {
+        name: loaded.name.clone(),
+        event_date: loaded.event_date.clone(),
+        title: loaded.title.clone(),
+        recipient: loaded.recipient.clone(),
+        opening: loaded.opening.clone(),
+        body: loaded.body.clone(),
+        closing: loaded.closing.clone(),
+        template_id: loaded.template_id.clone(),
+        theme: loaded.theme.clone(),
+        music: loaded.music.clone(),
+        video: loaded.video.clone(),
+        custom_css: loaded.custom_css.clone(),
+        photo_focus: Default::default(),
+        slideshow: false,
+    };
+    input.photo_focus.insert("a.jpg".to_string(), [30.0, 70.0]);
+    db.update_project(project.id, &input).unwrap();
+    let reloaded = db.get_project(project.id).unwrap().unwrap();
+    assert_eq!(reloaded.photo_focus.get("a.jpg"), Some(&[30.0, 70.0]));
+
+    let version = db.add_project_version(project.id, "https://example.com/a", "s3").unwrap();
     assert_eq!(version.version, 1);
     assert_eq!(db.list_project_versions(project.id).unwrap().len(), 1);
 

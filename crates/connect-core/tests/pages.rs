@@ -84,6 +84,8 @@ fn project() -> AnniversaryProject {
         music: String::new(),
         video: String::new(),
         custom_css: String::new(),
+        photo_focus: Default::default(),
+        slideshow: false,
         created_at: String::new(),
         updated_at: String::new(),
     }
@@ -108,6 +110,7 @@ fn target(endpoint: String) -> PublishTarget {
         project_name: "proj".to_string(),
         api_token: "api-token".to_string(),
         branch: "main".to_string(),
+        tunnel_config: String::new(),
         is_default: true,
         created_at: String::new(),
     }
@@ -132,7 +135,8 @@ async fn pages_direct_upload_creates_deployment() {
     .await
     .unwrap();
 
-    assert_eq!(result.url, "https://test.pages.dev/anniversary/testslug/");
+    // 返回稳定的 {项目}.pages.dev 地址，而不是部署哈希地址。
+    assert_eq!(result.url, "https://proj.pages.dev/anniversary/testslug/");
     let manifest = recorder.manifest.lock().unwrap().clone();
     assert!(manifest.contains("/anniversary/testslug/index.html"));
 }

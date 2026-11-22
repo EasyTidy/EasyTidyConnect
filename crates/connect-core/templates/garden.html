@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>{{title}}</title>
+<style>
+:root{--accent:{{theme}};--sage:#7f9a72;--sage-2:#a9bf9c;--leaf:color-mix(in srgb,var(--accent) 30%,#6f8f63);--cream:#f7f3ea;--ink:#3f4a3a;--muted:#8a9384;
+  --branch:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cg fill='none' stroke='%237f9a72' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M10 190C60 140 100 90 190 10'/%3E%3Cpath d='M60 140c-18-4-30-16-32-34 18 2 30 14 32 34zM60 140c4-18 16-30 34-32-2 18-14 30-34 32zM100 96c-18-4-30-16-32-34 18 2 30 14 32 34zM100 96c4-18 16-30 34-32-2 18-14 30-34 32zM140 54c-16-4-26-14-28-30 16 2 26 12 28 30zM140 54c4-16 14-26 30-28-2 16-12 26-30 28z'/%3E%3C/g%3E%3C/svg%3E");
+  --sprig:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 24'%3E%3Cg fill='none' stroke='%237f9a72' stroke-width='1.3' stroke-linecap='round'%3E%3Cpath d='M4 12h152'/%3E%3Cpath d='M80 12c-6-8-14-10-20-8 4 6 12 9 20 8zM80 12c6-8 14-10 20-8-4 6-12 9-20 8zM80 12c-6 8-14 10-20 8 4-6 12-9 20-8zM80 12c6 8 14 10 20 8-4-6-12-9-20-8z'/%3E%3C/g%3E%3Ccircle cx='80' cy='12' r='2.6' fill='%237f9a72'/%3E%3C/svg%3E")}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;color:var(--ink);font-family:"Songti SC","Noto Serif SC","STSong",Georgia,serif;background:radial-gradient(60% 40% at 0% 0%,rgba(169,191,156,.35),transparent 70%),radial-gradient(60% 40% at 100% 100%,rgba(169,191,156,.3),transparent 70%),var(--cream);overflow-x:hidden}
+html{background:var(--cream)}
+body:before,body:after{content:"";position:fixed;width:min(46vw,260px);aspect-ratio:1;background:var(--branch) no-repeat center/contain;opacity:.55;pointer-events:none;z-index:0}
+body:before{top:-20px;left:-30px;transform:rotate(-90deg) scaleX(-1)}
+body:after{bottom:-24px;right:-30px;transform:rotate(90deg) scaleX(-1)}
+main{position:relative;z-index:1;max-width:620px;margin:0 auto;padding:0 22px}
+section{padding:48px 0}
+.en{font-family:"Didot","Bodoni 72","Cormorant Garamond",Georgia,serif;font-style:italic;letter-spacing:.08em}
+/* 封面：拱门相框 */
+.cover{min-height:100vh;min-height:100svh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-top:60px}
+.std{font-size:13px;letter-spacing:.42em;color:var(--sage);text-transform:uppercase;margin-bottom:22px}
+.arch{position:relative;width:min(72vw,300px);aspect-ratio:3/4;border-radius:999px 999px 18px 18px;padding:7px;background:#fff;box-shadow:0 24px 50px -18px rgba(63,74,58,.35)}
+.arch:before{content:"";position:absolute;inset:-12px;border:1px solid var(--sage-2);border-radius:999px 999px 26px 26px}
+.arch i{display:block;width:100%;height:100%;border-radius:999px 999px 12px 12px;background:var(--cover) var(--cover-pos,center)/cover no-repeat,radial-gradient(circle at 50% 30%,#eef3e8,#cfdcc5)}
+.no-cover .arch i{background:var(--branch) center 60%/62% no-repeat,radial-gradient(circle at 50% 30%,#f3f6ee,#dbe6d3)}
+h1{margin:34px 0 8px;font-size:30px;font-weight:500;letter-spacing:.12em;line-height:1.45}
+.names{font-size:16px;letter-spacing:.3em;color:var(--muted)}
+.date{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:22px;font-size:15px;letter-spacing:.24em;color:var(--sage)}
+.date:before,.date:after{content:"";width:34px;height:1px;background:var(--sage-2)}
+.date:empty{display:none}
+.wk{margin-top:6px;font-size:12px;letter-spacing:.4em;color:var(--muted)}
+/* 信 */
+.sprig{height:24px;margin:0 auto 28px;width:160px;background:var(--sprig) no-repeat center/contain}
+.letter{text-align:center}
+.letter p{margin:0 0 16px;font-size:16px;line-height:2.1}
+.letter .opening{font-size:18px;color:var(--leaf)}
+.letter .closing{margin-top:26px;font-size:18px;color:var(--leaf)}
+.letter p:empty{display:none}
+/* 倒计时 */
+.when{text-align:center}
+.countdown{display:inline-flex;flex-direction:column;align-items:center;gap:2px;padding:20px 34px;border-radius:999px 999px 24px 24px;background:#fff;box-shadow:0 14px 36px -16px rgba(63,74,58,.35);font-size:13px;letter-spacing:.2em;color:var(--muted)}
+.countdown .cd-num{font-size:40px;line-height:1.2;color:var(--leaf);font-family:"Didot",Georgia,serif;letter-spacing:.02em}
+.countdown[hidden]{display:none}
+/* 相册：错落双列 */
+.gallery{columns:2;column-gap:12px}
+.gallery:empty{display:none}
+.gallery:has(img:only-child){columns:1}
+.gallery img{display:block;width:100%;height:auto;margin:0 0 12px;break-inside:avoid;border-radius:14px;box-shadow:0 10px 24px -12px rgba(63,74,58,.4)}
+.gallery:has(img:only-child) img{width:auto;max-width:100%;max-height:78vh;margin:0 auto}
+.end{text-align:center;padding-bottom:90px}
+.end .en{font-size:26px;color:var(--sage)}
+.end .cn{margin-top:6px;font-size:12px;letter-spacing:.5em;color:var(--muted)}
+.js [data-reveal]{opacity:0;transform:translateY(22px);transition:opacity 1s ease,transform 1s cubic-bezier(.2,.7,.2,1)}
+.js [data-reveal].in{opacity:1;transform:none}
+@media (min-width:768px){h1{font-size:36px}}
+@media (prefers-reduced-motion:reduce){.js [data-reveal]{opacity:1;transform:none;transition:none}}
+{{custom_css}}
+</style>
+</head>
+<body class="{{cover_class}}" style="--cover:{{cover_bg}}">
+<main>
+  <section class="cover">
+    <div class="std en" data-reveal>Save the Date</div>
+    <div class="arch" data-reveal><i></i></div>
+    <h1 data-reveal>{{title}}</h1>
+    <div class="names" data-reveal>{{recipient}}</div>
+    <div class="date en" data-reveal>{{date_dot}}</div>
+    <div class="wk" data-reveal>{{weekday}}</div>
+  </section>
+  <section class="letter" data-reveal>
+    <div class="sprig"></div>
+    <p class="opening">{{opening}}</p>
+    {{body}}
+    <p class="closing">{{closing}}</p>
+  </section>
+  <section class="when" data-reveal>
+    <div class="countdown" data-countdown="{{date}}" hidden><span class="cd-label"></span><span class="cd-num"></span><span class="cd-unit">天</span></div>
+  </section>
+  <section>
+    <div class="gallery" data-reveal>{{photos_rest}}</div>
+    {{media}}
+  </section>
+  <section class="end" data-reveal>
+    <div class="sprig"></div>
+    <div class="en">With Love</div>
+    <div class="cn">期 待 与 你 相 见</div>
+  </section>
+</main>
+<script>{{template_js}}</script>
+</body>
+</html>

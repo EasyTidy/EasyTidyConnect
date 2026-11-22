@@ -14,6 +14,7 @@ use serde_json::json;
 struct Recorder {
     auth: Mutex<Vec<String>>,
     paths: Mutex<Vec<String>>,
+    bodies: Mutex<Vec<(String, Vec<u8>)>>,
 }
 
 async fn mock_ai() -> axum::Json<serde_json::Value> {
@@ -30,11 +31,12 @@ async fn mock_put(
     State(recorder): State<Arc<Recorder>>,
     Path(path): Path<String>,
     headers: HeaderMap,
-    _body: Bytes,
+    body: Bytes,
 ) -> StatusCode {
     if let Some(auth) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
         recorder.auth.lock().unwrap().push(auth.to_string());
     }
+    recorder.bodies.lock().unwrap().push((path.clone(), body.to_vec()));
     recorder.paths.lock().unwrap().push(path);
     StatusCode::OK
 }
@@ -102,6 +104,8 @@ async fn s3_publish_uploads_html_and_photos_with_sigv4() {
         music: String::new(),
         video: String::new(),
         custom_css: String::new(),
+        photo_focus: Default::default(),
+        slideshow: false,
         created_at: String::new(),
         updated_at: String::new(),
     };
@@ -123,6 +127,7 @@ async fn s3_publish_uploads_html_and_photos_with_sigv4() {
         project_name: String::new(),
         api_token: String::new(),
         branch: String::new(),
+        tunnel_config: String::new(),
         is_default: true,
         created_at: String::new(),
     };
@@ -138,9 +143,12 @@ async fn s3_publish_uploads_html_and_photos_with_sigv4() {
         .await
         .unwrap();
 
-    assert_eq!(result.uploaded, 1);
+    // 照片 + 分享缩略图 share.jpg
+    assert_eq!(result.uploaded, 2);
     assert!(result.url.ends_with("/anniversary/testslug/index.html"));
-    assert_eq!(recorder.paths.lock().unwrap().len(), 2);
+    let paths = recorder.paths.lock().unwrap().clone();
+    assert_eq!(paths.len(), 3);
+    assert!(paths.iter().any(|path| path.ends_with("testslug/share.jpg")));
     assert!(recorder
         .auth
         .lock()
@@ -148,5 +156,83 @@ async fn s3_publish_uploads_html_and_photos_with_sigv4() {
         .iter()
         .all(|value| value.starts_with("AWS4-HMAC-SHA256 ")));
 
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn static_publish_writes_share_card_meta() {
+    let (base, recorder) = spawn_mock().await;
+    let root = std::env::temp_dir().join(format!("connect-share-test-{}", uuid::Uuid::new_v4()));
+    let db = connect_core::Database::open(&root.join("connect.db")).unwrap();
+    let project = db
+        .create_project(&connect_core::ProjectInput {
+            name: "周年".to_string(),
+            event_date: "2026-12-24".to_string(),
+            title: "三年前的今天".to_string(),
+            recipient: "小雨".to_string(),
+            opening: "亲爱的小雨：".to_string(),
+            body: "第一段".to_string(),
+            closing: "结尾".to_string(),
+            template_id: "xitie".to_string(),
+            theme: "#2563eb".to_string(),
+            music: String::new(),
+            video: String::new(),
+            custom_css: String::new(),
+            photo_focus: Default::default(),
+            slideshow: false,
+        })
+        .unwrap();
+    let photos = root.join("anniversaries").join(project.id.to_string()).join("photos");
+    std::fs::create_dir_all(&photos).unwrap();
+    std::fs::write(photos.join("cover.jpg"), b"fake-jpeg").unwrap();
+    db.set_project_photos(project.id, &["cover.jpg".to_string()]).unwrap();
+    db.save_share_settings(
+        project.id,
+        &connect_core::ShareSettings { title: "给小雨的喜帖".to_string(), description: String::new() },
+    )
+    .unwrap();
+    let project = db.get_project(project.id).unwrap().unwrap();
+
+    let target = PublishTarget {
+        id: 1,
+        name: "Mock S3".to_string(),
+        kind: "s3".to_string(),
+        endpoint: base.clone(),
+        region: "us-east-1".to_string(),
+        bucket: "bucket".to_string(),
+        access_key: "AK".to_string(),
+        secret_key: "SK".to_string(),
+        prefix: "anniversary".to_string(),
+        public_base_url: String::new(),
+        cloudflared_path: String::new(),
+        tunnel_token: String::new(),
+        hostname: String::new(),
+        account_id: String::new(),
+        project_name: String::new(),
+        api_token: String::new(),
+        branch: String::new(),
+        tunnel_config: String::new(),
+        is_default: true,
+        created_at: String::new(),
+    };
+    let result = connect_core::share::publish_static(&db, &root, &project, &target).await.unwrap();
+    let page = format!("{base}/bucket/anniversary/{}/", project.slug);
+    assert_eq!(result.url, format!("{page}index.html"));
+
+    let bodies = recorder.bodies.lock().unwrap().clone();
+    let (_, html) = bodies.iter().find(|(path, _)| path.ends_with("/index.html")).expect("index.html uploaded");
+    let html = String::from_utf8(html.clone()).unwrap();
+    assert!(html.contains("<title>给小雨的喜帖</title>"));
+    assert!(html.contains(&format!("<meta property=\"og:image\" content=\"{page}share.jpg\">")));
+    assert!(html.contains(&format!("<meta property=\"og:url\" content=\"{page}index.html\">")));
+    assert!(html.contains("<meta name=\"description\" content=\"亲爱的小雨：\">"));
+    assert!(bodies.iter().any(|(path, _)| path.ends_with("/share.jpg")));
+
+    // 隧道类目标不允许走静态发布（不能分享）。
+    let mut tunnel = target.clone();
+    tunnel.kind = "lan_tunnel".to_string();
+    assert!(connect_core::share::publish_static(&db, &root, &project, &tunnel).await.is_err());
+
+    drop(db);
     let _ = std::fs::remove_dir_all(root);
 }

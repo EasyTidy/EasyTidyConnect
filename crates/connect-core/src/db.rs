@@ -7,8 +7,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use crate::models::{
-    AiProvider, AiProviderInput, AnniversaryProject, ProjectInput, ProjectVersion, PublishTarget,
-    PublishTargetInput, RunView, Settings, TriggerRow, TriggerView,
+    AiProvider, AiProviderInput, AnniversaryProject, CustomTemplate, ProjectInput, ProjectVersion,
+    PublishTarget, PublishTargetInput, RunView, Settings, ShareSettings, TriggerRow, TriggerView,
+    WechatConfig,
 };
 
 pub struct Database {
@@ -79,6 +80,20 @@ impl Database {
                 status TEXT NOT NULL DEFAULT 'published',
                 published_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS project_shares (
+                project_id INTEGER PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS custom_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                prompt TEXT NOT NULL DEFAULT '',
+                css TEXT NOT NULL,
+                dark INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS ai_providers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -124,6 +139,10 @@ impl Database {
         let _ = conn.execute("ALTER TABLE publish_targets ADD COLUMN branch TEXT NOT NULL DEFAULT 'main'", []);
         let _ = conn.execute("ALTER TABLE anniversary_projects ADD COLUMN music TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE anniversary_projects ADD COLUMN video TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE anniversary_projects ADD COLUMN photo_focus TEXT NOT NULL DEFAULT '{}'", []);
+        let _ = conn.execute("ALTER TABLE anniversary_projects ADD COLUMN slideshow INTEGER NOT NULL DEFAULT 0", []);
+        let _ = conn.execute("ALTER TABLE anniversary_versions ADD COLUMN target_kind TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE publish_targets ADD COLUMN tunnel_config TEXT NOT NULL DEFAULT ''", []);
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -372,7 +391,7 @@ impl Database {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
             "SELECT id, slug, name, event_date, title, recipient, opening, body, closing,
-                    template_id, theme, photos_json, music, video, custom_css, created_at, updated_at
+                    template_id, theme, photos_json, music, video, custom_css, created_at, updated_at, photo_focus, slideshow
              FROM anniversary_projects ORDER BY id DESC",
         )?;
         let rows = stmt
@@ -385,7 +404,7 @@ impl Database {
         let conn = self.lock()?;
         conn.query_row(
             "SELECT id, slug, name, event_date, title, recipient, opening, body, closing,
-                    template_id, theme, photos_json, music, video, custom_css, created_at, updated_at
+                    template_id, theme, photos_json, music, video, custom_css, created_at, updated_at, photo_focus, slideshow
              FROM anniversary_projects WHERE id=?1",
             params![id],
             map_project,
@@ -398,7 +417,7 @@ impl Database {
         let conn = self.lock()?;
         conn.query_row(
             "SELECT id, slug, name, event_date, title, recipient, opening, body, closing,
-                    template_id, theme, photos_json, music, video, custom_css, created_at, updated_at
+                    template_id, theme, photos_json, music, video, custom_css, created_at, updated_at, photo_focus, slideshow
              FROM anniversary_projects WHERE slug=?1",
             params![slug],
             map_project,
@@ -414,8 +433,8 @@ impl Database {
         conn.execute(
             "INSERT INTO anniversary_projects
              (slug, name, event_date, title, recipient, opening, body, closing,
-              template_id, theme, photos_json, music, video, custom_css, created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'[]',?11,?12,?13,?14,?14)",
+              template_id, theme, photos_json, music, video, custom_css, created_at, updated_at, photo_focus, slideshow)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'[]',?11,?12,?13,?14,?14,?15,?16)",
             params![
                 slug,
                 input.name,
@@ -430,7 +449,9 @@ impl Database {
                 input.music,
                 input.video,
                 input.custom_css,
-                now
+                now,
+                serde_json::to_string(&input.photo_focus)?,
+                input.slideshow
             ],
         )?;
         let id = conn.last_insert_rowid();
@@ -444,7 +465,7 @@ impl Database {
             "UPDATE anniversary_projects SET
                 name=?1, event_date=?2, title=?3, recipient=?4, opening=?5, body=?6,
                 closing=?7, template_id=?8, theme=?9, music=?10, video=?11,
-                custom_css=?12, updated_at=?13
+                custom_css=?12, updated_at=?13, photo_focus=?15, slideshow=?16
              WHERE id=?14",
             params![
                 input.name,
@@ -460,7 +481,9 @@ impl Database {
                 input.video,
                 input.custom_css,
                 Utc::now().to_rfc3339(),
-                id
+                id,
+                serde_json::to_string(&input.photo_focus)?,
+                input.slideshow
             ],
         )?;
         Ok(())
@@ -470,6 +493,7 @@ impl Database {
         let conn = self.lock()?;
         conn.execute("DELETE FROM anniversary_projects WHERE id=?1", params![id])?;
         conn.execute("DELETE FROM anniversary_versions WHERE project_id=?1", params![id])?;
+        conn.execute("DELETE FROM project_shares WHERE project_id=?1", params![id])?;
         Ok(())
     }
 
@@ -499,9 +523,11 @@ impl Database {
         Ok(())
     }
 
-    pub fn add_project_version(        &self,
+    pub fn add_project_version(
+        &self,
         project_id: i64,
         published_url: &str,
+        target_kind: &str,
     ) -> Result<ProjectVersion> {
         let conn = self.lock()?;
         let version: i64 = conn
@@ -513,9 +539,9 @@ impl Database {
             .unwrap_or(1);
         let now = Utc::now().to_rfc3339();
         conn.execute(
-            "INSERT INTO anniversary_versions(project_id, version, published_url, status, published_at)
-             VALUES (?1,?2,?3,'published',?4)",
-            params![project_id, version, published_url, now],
+            "INSERT INTO anniversary_versions(project_id, version, published_url, status, published_at, target_kind)
+             VALUES (?1,?2,?3,'published',?4,?5)",
+            params![project_id, version, published_url, now, target_kind],
         )?;
         Ok(ProjectVersion {
             id: conn.last_insert_rowid(),
@@ -524,13 +550,14 @@ impl Database {
             published_url: published_url.to_string(),
             status: "published".to_string(),
             published_at: now,
+            target_kind: target_kind.to_string(),
         })
     }
 
     pub fn list_project_versions(&self, project_id: i64) -> Result<Vec<ProjectVersion>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT id, project_id, version, published_url, status, published_at
+            "SELECT id, project_id, version, published_url, status, published_at, target_kind
              FROM anniversary_versions WHERE project_id=?1 ORDER BY version DESC",
         )?;
         let rows = stmt
@@ -542,6 +569,7 @@ impl Database {
                     published_url: row.get(3)?,
                     status: row.get(4)?,
                     published_at: row.get(5)?,
+                    target_kind: row.get(6)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -612,7 +640,7 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT id, name, kind, endpoint, region, bucket, access_key, secret_key,
                     prefix, public_base_url, cloudflared_path, tunnel_token, hostname,
-                    account_id, project_name, api_token, branch, is_default, created_at
+                    account_id, project_name, api_token, branch, is_default, created_at, tunnel_config
              FROM publish_targets ORDER BY id DESC",
         )?;
         let rows = stmt
@@ -637,6 +665,7 @@ impl Database {
                     branch: row.get(16)?,
                     is_default: row.get::<_, i64>(17)? != 0,
                     created_at: row.get(18)?,
+                    tunnel_config: row.get(19)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -652,8 +681,8 @@ impl Database {
             "INSERT INTO publish_targets
              (name, kind, endpoint, region, bucket, access_key, secret_key, prefix,
               public_base_url, cloudflared_path, tunnel_token, hostname, account_id,
-              project_name, api_token, branch, is_default, created_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+              project_name, api_token, branch, is_default, created_at, tunnel_config)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
             params![
                 input.name,
                 input.kind,
@@ -672,7 +701,8 @@ impl Database {
                 input.api_token,
                 input.branch,
                 if input.is_default { 1 } else { 0 },
-                Utc::now().to_rfc3339()
+                Utc::now().to_rfc3339(),
+                input.tunnel_config
             ],
         )?;
         let id = conn.last_insert_rowid();
@@ -686,6 +716,135 @@ impl Database {
     pub fn delete_publish_target(&self, id: i64) -> Result<()> {
         let conn = self.lock()?;
         conn.execute("DELETE FROM publish_targets WHERE id=?1", params![id])?;
+        Ok(())
+    }
+
+    /// Cloudflare 授权（OAuth 或 API Token），所有 Cloudflare 发布目标共用。
+    pub fn get_cloudflare_auth(&self) -> Result<crate::cloudflare::CloudflareAuth> {
+        let conn = self.lock()?;
+        Ok(get_setting(&conn, "cloudflare_auth")?
+            .and_then(|value| serde_json::from_str(&value).ok())
+            .unwrap_or_default())
+    }
+
+    pub fn save_cloudflare_auth(&self, auth: &crate::cloudflare::CloudflareAuth) -> Result<()> {
+        let conn = self.lock()?;
+        set_setting(&conn, "cloudflare_auth", &serde_json::to_string(auth)?)
+    }
+
+    /// 用户自己注册的 OAuth client ID（覆盖内置 / 环境变量里的默认值）。
+    pub fn get_cloudflare_client_id(&self) -> Result<String> {
+        let conn = self.lock()?;
+        Ok(get_setting(&conn, "cloudflare_client_id")?.unwrap_or_default())
+    }
+
+    pub fn save_cloudflare_client_id(&self, client_id: &str) -> Result<()> {
+        let conn = self.lock()?;
+        set_setting(&conn, "cloudflare_client_id", client_id.trim())
+    }
+
+    /// 微信 JS-SDK 配置（存于 settings 表的 wechat 键，JSON）。
+    pub fn get_wechat_config(&self) -> Result<WechatConfig> {
+        let conn = self.lock()?;
+        Ok(get_setting(&conn, "wechat")?
+            .and_then(|value| serde_json::from_str(&value).ok())
+            .unwrap_or_default())
+    }
+
+    pub fn save_wechat_config(&self, config: &WechatConfig) -> Result<()> {
+        let conn = self.lock()?;
+        set_setting(&conn, "wechat", &serde_json::to_string(config)?)
+    }
+
+    pub fn get_share_settings(&self, project_id: i64) -> Result<Option<ShareSettings>> {
+        let conn = self.lock()?;
+        conn.query_row(
+            "SELECT title, description FROM project_shares WHERE project_id=?1",
+            params![project_id],
+            |row| {
+                Ok(ShareSettings {
+                    title: row.get(0)?,
+                    description: row.get(1)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub fn save_share_settings(&self, project_id: i64, settings: &ShareSettings) -> Result<()> {
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO project_shares(project_id, title, description) VALUES (?1, ?2, ?3)
+             ON CONFLICT(project_id) DO UPDATE SET title=excluded.title, description=excluded.description",
+            params![project_id, settings.title.trim(), settings.description.trim()],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_custom_templates(&self) -> Result<Vec<CustomTemplate>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, prompt, css, dark, created_at, updated_at
+             FROM custom_templates ORDER BY id DESC",
+        )?;
+        let rows = stmt
+            .query_map([], map_custom_template)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn get_custom_template(&self, id: i64) -> Result<Option<CustomTemplate>> {
+        let conn = self.lock()?;
+        conn.query_row(
+            "SELECT id, name, prompt, css, dark, created_at, updated_at
+             FROM custom_templates WHERE id=?1",
+            params![id],
+            map_custom_template,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub fn create_custom_template(
+        &self,
+        name: &str,
+        prompt: &str,
+        css: &str,
+        dark: bool,
+    ) -> Result<CustomTemplate> {
+        let now = Utc::now().to_rfc3339();
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO custom_templates (name, prompt, css, dark, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+            params![name, prompt, css, dark as i64, now],
+        )?;
+        let id = conn.last_insert_rowid();
+        drop(conn);
+        self.get_custom_template(id)?.context("created template missing")
+    }
+
+    pub fn update_custom_template(
+        &self,
+        id: i64,
+        name: &str,
+        prompt: &str,
+        css: &str,
+        dark: bool,
+    ) -> Result<CustomTemplate> {
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE custom_templates SET name=?1, prompt=?2, css=?3, dark=?4, updated_at=?5 WHERE id=?6",
+            params![name, prompt, css, dark as i64, Utc::now().to_rfc3339(), id],
+        )?;
+        drop(conn);
+        self.get_custom_template(id)?.context("template missing")
+    }
+
+    pub fn delete_custom_template(&self, id: i64) -> Result<()> {
+        let conn = self.lock()?;
+        conn.execute("DELETE FROM custom_templates WHERE id=?1", params![id])?;
         Ok(())
     }
 
@@ -734,6 +893,24 @@ fn map_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<AnniversaryProject> 
         custom_css: row.get(14)?,
         created_at: row.get(15)?,
         updated_at: row.get(16)?,
+        photo_focus: row
+            .get::<_, String>(17)
+            .ok()
+            .and_then(|value| serde_json::from_str(&value).ok())
+            .unwrap_or_default(),
+        slideshow: row.get::<_, i64>(18).unwrap_or(0) != 0,
+    })
+}
+
+fn map_custom_template(row: &rusqlite::Row<'_>) -> rusqlite::Result<CustomTemplate> {
+    Ok(CustomTemplate {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        prompt: row.get(2)?,
+        css: row.get(3)?,
+        dark: row.get::<_, i64>(4)? != 0,
+        created_at: row.get(5)?,
+        updated_at: row.get(6)?,
     })
 }
 

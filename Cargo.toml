@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "crates/connect-core", "crates/connectd"]
+members = ["src-tauri", "crates/connect-core", "crates/connectd", "crates/wechat-signer"]
 resolver = "2"
 
 [workspace.package]

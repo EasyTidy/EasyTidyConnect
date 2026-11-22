@@ -1,0 +1,6 @@
+# Caddy 会自动申请 HTTPS 证书。把 sign.example.com 解析到这台服务器后：
+#   caddy run --config Caddyfile
+sign.example.com {
+	reverse_proxy /wx/* 127.0.0.1:8080
+	respond 404
+}

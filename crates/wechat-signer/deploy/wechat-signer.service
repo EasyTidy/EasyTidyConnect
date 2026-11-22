@@ -1,0 +1,33 @@
+# systemd 服务：
+#   sudo install -m 755 wechat-signer /usr/local/bin/
+#   sudo install -m 600 wechat-signer.env /etc/wechat-signer.env
+#   sudo cp wechat-signer.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now wechat-signer
+[Unit]
+Description=WeChat JS-SDK signer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/wechat-signer
+EnvironmentFile=/etc/wechat-signer.env
+Restart=on-failure
+RestartSec=3
+
+# 最小权限：临时用户、只读文件系统、禁止提权
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

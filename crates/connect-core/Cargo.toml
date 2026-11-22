@@ -13,6 +13,8 @@ reqwest.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 sha2.workspace = true
+# 微信 JS-SDK 签名（独立 crate，也可单独部署）
+wechat-signer = { path = "../wechat-signer" }
 hmac = "0.12"
 percent-encoding = "2"
 base64 = "0.22"
@@ -22,3 +24,15 @@ rand.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 anyhow = "1"
+# 内网穿透：ngrok 官方 SDK、bore 客户端、SSH 反向隧道（均为纯 Rust，无需安装外部程序）
+# 用 ring 而不是默认的 aws-lc-rs：后者在 Windows/macOS/Linux 构建都需要 CMake/NASM。
+ngrok = { version = "0.19", default-features = false, features = ["ring"] }
+bore-cli = "0.6"
+russh = { version = "0.65", default-features = false, features = ["ring", "flate2", "rsa"] }
+# 自动下载 cloudflared / frpc 时解压：Windows 为 zip，macOS / Linux 为 tar.gz
+zip = { version = "9", default-features = false, features = ["deflate"] }
+tar = "0.4"
+flate2 = "1"
+url = "2"
+# 分享缩略图：裁剪缩放为 300×300 JPEG（微信要求缩略图足够小，否则不显示）
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }

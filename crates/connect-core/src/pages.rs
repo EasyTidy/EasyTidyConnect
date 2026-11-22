@@ -39,15 +39,17 @@ pub async fn publish_project(
         .timeout(Duration::from_secs(180))
         .build()?;
 
-    let prefix = target.prefix.trim().trim_matches('/');
-    let prefix = if prefix.is_empty() { "anniversary" } else { prefix };
-    let base_path = format!("{prefix}/{}", project.slug);
+    let base_path = base_path(target, &project.slug);
 
-    let mut assets = vec![make_asset(
-        &format!("{base_path}/index.html"),
-        html.as_bytes(),
-        "text/html; charset=utf-8",
-    )];
+    let mut assets = vec![
+        make_asset(&format!("{base_path}/index.html"), html.as_bytes(), "text/html; charset=utf-8"),
+        // 分享缩略图兜底（没有照片时分享卡片使用）。
+        make_asset(
+            &format!("{base_path}/{}", crate::share::SHARE_THUMB_NAME),
+            &crate::share::share_thumbnail(project, photos_dir),
+            "image/jpeg",
+        ),
+    ];
 
     if photos_dir.exists() {
         for entry in std::fs::read_dir(photos_dir)
@@ -120,18 +122,23 @@ pub async fn publish_project(
         .unwrap_or_default();
     poll_deployment(&client, target, deployment_id).await?;
 
-    let base = if target.public_base_url.trim().is_empty() {
-        deployment_url
-    } else {
-        target.public_base_url.trim().trim_end_matches('/').to_string()
-    };
-    let url = format!("{base}/{base_path}/");
+    // 返回稳定地址（自定义域名或 {项目}.pages.dev），而不是每次部署都会变的哈希地址，
+    // 这样 NFC 标签和分享出去的链接在重新发布后依然有效。
+    tracing::debug!("pages deployment url: {deployment_url}");
+    let url = format!("{}/{base_path}/", crate::share::pages_origin(target));
 
     Ok(PublishResult {
         url,
         slug: project.slug.clone(),
         uploaded: to_upload.len(),
     })
+}
+
+/// 项目在 Pages 站点里的路径：`{prefix}/{slug}`（前缀默认 anniversary）。
+pub(crate) fn base_path(target: &PublishTarget, slug: &str) -> String {
+    let prefix = target.prefix.trim().trim_matches('/');
+    let prefix = if prefix.is_empty() { "anniversary" } else { prefix };
+    format!("{prefix}/{slug}")
 }
 
 pub async fn test_target(target: &PublishTarget) -> Result<()> {

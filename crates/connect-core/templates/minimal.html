@@ -19,8 +19,14 @@ h1{font-size:clamp(30px,5vw,50px);font-weight:500;text-align:center;line-height:
 .rule{width:46px;height:1px;background:var(--accent);margin:0 auto 34px;opacity:.6}
 p{font-size:16px;line-height:2.1;margin:0 0 18px;text-align:justify}
 p:first-letter{font-size:2.1em;float:left;line-height:1;padding:6px 10px 0 0;color:var(--accent);font-family:Georgia,serif}
-.photos{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:30px 0}
-.photos img{width:100%;height:230px;object-fit:cover;border-radius:2px;box-shadow:0 10px 26px rgba(70,50,30,.14)}
+.photos{margin:34px 0}
+.photos{columns:2;column-gap:14px}
+.photos:empty{display:none}
+.photos:has(img:only-child){columns:1}
+.photos img{display:block;width:100%;height:auto;margin:0 0 14px;break-inside:avoid;border-radius:2px;box-shadow:0 12px 28px -10px rgba(70,50,30,.28)}
+.photos:has(img:only-child) img{width:auto;max-width:100%;max-height:78vh;margin:0 auto}
+.photos img:nth-child(even){margin-top:22px}
+.photos:has(img:only-child) img{margin-top:0}
 .sign{margin-top:40px;display:flex;align-items:center;justify-content:flex-end;gap:14px;color:#6d5c4c;font-style:italic}
 .seal{width:48px;height:48px;border-radius:50%;border:1px solid color-mix(in srgb,var(--accent) 55%,#fff);display:grid;place-items:center;color:var(--accent);font-size:10px;letter-spacing:.1em;font-style:normal;transform:rotate(-8deg)}
 {{custom_css}}

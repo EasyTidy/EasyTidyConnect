@@ -33,6 +33,7 @@ async fn main() -> Result<()> {
             }
             "--help" | "-h" => {
                 println!("connectd --port 53400 --data-dir <dir>");
+                println!("微信 JS-SDK 签名服务请使用独立程序 wechat-signer（wechat-signer --help）");
                 return Ok(());
             }
             _ => {}
@@ -54,11 +55,13 @@ async fn main() -> Result<()> {
             tracing::error!("public preview server stopped: {err}");
         }
     });
+    let tools_dir = data_dir.join("tools");
     connect_core::server::serve(
         db,
         port,
         data_dir,
-        Arc::new(connect_core::TunnelManager::new()),
+        Arc::new(connect_core::TunnelManager::new(tools_dir)),
     )
     .await
 }
+

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>{{title}}</title>
+<style>
+:root{--accent:{{theme}}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;font-family:"PingFang SC","Noto Serif SC","Songti SC","Microsoft YaHei",serif;font-size:16px;line-height:1.85;color:#2f2a26;background:#faf7f2}
+img,video{max-width:100%}
+.et-page{position:relative;min-height:100vh;padding:56px 18px 64px;overflow:hidden}
+.et-deco{position:absolute;pointer-events:none}
+.et-sheet{position:relative;z-index:1;max-width:720px;margin:0 auto}
+.et-hero{text-align:center}
+.et-title{margin:.3em 0;font-weight:500;line-height:1.35}
+.et-date:empty,.et-to:empty,.et-opening:empty,.et-closing:empty{display:none}
+.et-body p{margin:0 0 1em}
+.et-gallery{margin:28px 0}
+.et-gallery{columns:2;column-gap:10px}
+.et-gallery:empty{display:none}
+.et-gallery:has(img:only-child){columns:1}
+.et-gallery img{display:block;width:100%;height:auto;margin:0 0 10px;break-inside:avoid;}
+.et-gallery:has(img:only-child) img{width:auto;max-width:100%;max-height:78vh;margin:0 auto}
+</style>
+<style>
+{{template_css}}
+</style>
+<style>
+{{custom_css}}
+</style>
+</head>
+<body>
+<div class="et-page">
+  <div class="et-deco et-deco-1"></div>
+  <div class="et-deco et-deco-2"></div>
+  <div class="et-deco et-deco-3"></div>
+  <main class="et-sheet">
+    <header class="et-hero">
+      <div class="et-date">{{date}}</div>
+      <h1 class="et-title">{{title}}</h1>
+      <div class="et-to">{{recipient}}</div>
+    </header>
+    <div class="et-divider"></div>
+    <article class="et-letter">
+      <p class="et-opening">{{opening}}</p>
+      <div class="et-body">{{body}}</div>
+      <div class="et-gallery">{{photos}}</div>
+      {{media}}
+      <p class="et-closing">{{closing}}</p>
+    </article>
+    <footer class="et-sign"><span class="et-sign-mark"></span></footer>
+  </main>
+</div>
+</body>
+</html>

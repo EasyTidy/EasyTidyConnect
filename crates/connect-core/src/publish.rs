@@ -56,19 +56,18 @@ pub async fn publish_project(
         .timeout(Duration::from_secs(120))
         .build()?;
 
-    let prefix = target
-        .prefix
-        .trim()
-        .trim_matches('/')
-        .to_string();
-    let slug = project.slug.trim_matches('/');
-    let base_key = if prefix.is_empty() {
-        slug.to_string()
-    } else {
-        format!("{prefix}/{slug}")
-    };
+    let base_key = base_key(target, &project.slug);
 
-    let mut uploaded = 0usize;
+    // 分享缩略图兜底（没有照片时分享卡片使用）。
+    put_object(
+        &client,
+        target,
+        &format!("{base_key}/{}", crate::share::SHARE_THUMB_NAME),
+        &crate::share::share_thumbnail(project, photos_dir),
+        "image/jpeg",
+    )
+    .await?;
+    let mut uploaded = 1usize;
     for (dir, folder) in [(photos_dir, "photos"), (media_dir, "media")] {
         if !dir.exists() {
             continue;
@@ -213,7 +212,18 @@ fn hmac(key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
     Ok(mac.finalize().into_bytes().to_vec())
 }
 
-fn public_url(target: &PublishTarget, key: &str) -> String {
+/// 对象存储里该项目的目录：`{prefix}/{slug}`。
+pub(crate) fn base_key(target: &PublishTarget, slug: &str) -> String {
+    let prefix = target.prefix.trim().trim_matches('/');
+    let slug = slug.trim_matches('/');
+    if prefix.is_empty() {
+        slug.to_string()
+    } else {
+        format!("{prefix}/{slug}")
+    }
+}
+
+pub(crate) fn public_url(target: &PublishTarget, key: &str) -> String {
     if !target.public_base_url.trim().is_empty() {
         return format!(
             "{}/{}",
@@ -229,7 +239,7 @@ fn public_url(target: &PublishTarget, key: &str) -> String {
     )
 }
 
-fn content_type(name: &str) -> &'static str {
+pub(crate) fn content_type(name: &str) -> &'static str {
     match Path::new(name)
         .extension()
         .and_then(|ext| ext.to_str())

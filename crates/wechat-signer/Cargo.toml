@@ -1,0 +1,27 @@
+[package]
+name = "wechat-signer"
+description = "微信公众号 JS-SDK 签名服务：为静态托管的页面提供 wx.config 签名（可独立部署）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "wechat-signer"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+axum.workspace = true
+hex.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha1 = "0.10"
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url = "2"
