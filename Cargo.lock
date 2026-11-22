@@ -936,7 +936,7 @@ dependencies = [
 
 [[package]]
 name = "connect-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -969,7 +969,7 @@ dependencies = [
 
 [[package]]
 name = "connectd"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "connect-core",
@@ -1566,7 +1566,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "easytidy-connect"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -7034,7 +7034,7 @@ dependencies = [
 
 [[package]]
 name = "wechat-signer"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "axum",
